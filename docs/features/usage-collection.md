@@ -29,7 +29,7 @@ remote instance separately.
 
 ## Report contents
 
-After newly credited foreground UI time, the background worker sends only:
+After newly credited foreground UI time, the ordinary activity report sends only:
 
 ```json
 {
@@ -64,6 +64,28 @@ plain HTTP is accepted only for loopback development. Redirects are rejected.
 
 ## Relay forwarding
 
+### Daily model summaries
+
+Set `OCMAN_USAGE_DAILY_MODELS=true` on the ocman server to opt in to expanded
+reporting. **Send usage reports** must also be enabled. The first eligible
+bucket is the next full UTC day after enabling. Only yesterday's bucket is
+sent, with no historical backfill. Turning off usage reports cancels pending
+sends. Remove the environment variable and restart to disable model summaries.
+
+`POST /v1/usage/daily` sends the installation ID, date and version with a
+`daily` object containing `sessions` and `models`. Each model entry contains
+`model`, `sessions`, `inputTokens` and `outputTokens`. Ocman reads owner-local
+assistant analytics summaries, not transcripts. A session with a valid
+assistant message counts once overall and once per model used that day. Missing
+token accounting is not estimated. Only exact allowlisted public model IDs
+are sent; other names become `other`. No session IDs or message content are sent.
+
+Update collector filters first, deploy the relay second, and enable clients
+last. Older relays do not support the daily route. Ordinary activity reports
+continue independently. The daily route shares rate limits and has a 4 KiB cap.
+
+### OTLP events
+
 The relay forwards events to an OTLP/HTTP logs endpoint, without writing usage
 records, IP logs or an export queue to disk. Existing encrypted share and webhook
 storage is unchanged. Rate-limit buckets and in-flight requests are memory-only.
@@ -88,7 +110,7 @@ certificate/client-certificate or timeout environment overrides. The relay retur
 fails or all 32 export slots are busy. App foreground use never waits on this
 network request.
 
-Payloads are limited to 1 KiB and unknown fields are rejected. Submission limits
+Activity payloads are limited to 1 KiB and unknown fields are rejected. Submission limits
 are 60 requests/hour/IP with a burst of ten. `-trust-proxy` must only be used behind
 a proxy that overwrites forwarded headers. Rejected-request security forwarding
 has a separate rate limit to bound abuse logging.
@@ -96,9 +118,11 @@ has a separate rate limit to bound abuse logging.
 | Event body/name | Log attributes |
 | --- | --- |
 | `ocman.usage.active` | `ocman.installation.id`, `ocman.activity.date`, `ocman.version` |
+| `ocman.usage.daily` | Activity identity fields plus `ocman.sessions` |
+| `ocman.usage.model.daily` | Activity identity fields plus `ocman.model`, `ocman.sessions`, `ocman.tokens.input`, `ocman.tokens.output` |
 | `ocman.usage.security` | `client.address`, `http.response.status_code` |
 
-Both use resource `service.name=ocman-relay`. Usage timestamps are the activity
+All use resource `service.name=ocman-relay`. Usage timestamps are the activity
 day's UTC midnight and observed timestamps record receipt. Security timestamps
 record receipt; security events do not contain installation IDs or versions.
 Invalid payload content is never forwarded. IP security events can be lost during
@@ -110,6 +134,12 @@ requests, not necessary security logging for other service requests. Separate
 events can still be correlated by arrival time, so they are not unlinkable.
 
 ## Counting activity
+
+Allowlist the daily event names and the corresponding attributes above in
+the usage pipeline, not the restricted security pipeline. For retries, keep
+the latest record per installation and date for overall totals, and per
+installation, date and model for model totals. Summing counts across models
+can count the same session twice. Summing daily counts yields session-days.
 
 Filter `ocman.usage.active` over the chosen UTC activity dates, deduplicate
 installation/date pairs, then count distinct installation IDs for daily, weekly
@@ -129,13 +159,15 @@ flowchart LR
     UI[Foreground UI time] --> Local[Local activity accounting]
     Local --> Worker[usagecollection worker]
     Settings[Instance opt-out] --> Worker
-    Worker -->|ID, UTC date, version| Relay[Relay POST /v1/usage]
+    Worker -->|ID, UTC date, version| Relay[Relay usage routes]
+    Summary[Owner-local analytics summaries] -->|Closed UTC day; explicit opt-in| Worker
+    Worker -->|Daily session counts and tokens by model| Relay
     Relay -->|Separate usage and IP events| Forward[usageforward OTLP/HTTP]
     Forward --> Backend[Operator's logs backend]
 ```
 
 `internal/usagecollection` owns the setting, ID, pending date and checkpoint.
-`internal/analytics` calls it only after newly credited foreground time.
+`internal/analytics` signals ordinary reporting after newly credited foreground time.
 `internal/usagewire` defines the report and strict decoder. `internal/relay`
 validates/rate-limits intake. `internal/usageforward` exports SDK-created log
 records synchronously without installing global providers or retaining events.

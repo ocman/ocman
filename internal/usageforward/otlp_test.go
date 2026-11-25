@@ -85,6 +85,23 @@ func clearEnv(t *testing.T) {
 	}
 }
 
+func TestDailyUsageEvents(t *testing.T) {
+	e := &memoryExporter{}
+	f := newForwarder(e)
+	t.Cleanup(func() { _ = f.Shutdown(t.Context()) })
+	r := &usagewire.Report{Date: "2026-11-24", Daily: &usagewire.Daily{Sessions: 2, Models: []usagewire.ModelUsage{{Model: "gpt-5.4", Sessions: 1, InputTokens: 12, OutputTokens: 3}}}}
+	if err := f.Forward(t.Context(), r, "192.0.2.1", 204); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.records) != 3 {
+		t.Fatal(len(e.records))
+	}
+	a, b, c := &e.records[0], &e.records[1], &e.records[2]
+	if a.EventName() != "ocman.usage.daily" || attributes(a)["ocman.sessions"] != int64(2) || b.EventName() != "ocman.usage.model.daily" || attributes(b)["ocman.model"] != "gpt-5.4" || attributes(b)["ocman.tokens.input"] != int64(12) || attributes(b)["client.address"] != nil || c.EventName() != "ocman.usage.security" || attributes(c)["ocman.model"] != nil {
+		t.Fatal("daily and security records must remain separate")
+	}
+}
+
 func TestOTLPHTTPDeliveryAndFailure(t *testing.T) {
 	clearEnv(t)
 	var received collectorlog.ExportLogsServiceRequest

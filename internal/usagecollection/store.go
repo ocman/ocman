@@ -20,6 +20,10 @@ var Schema = state.ModuleSchema{
 		 id INTEGER PRIMARY KEY CHECK(id=1), installation_id TEXT NOT NULL,
 		 pending_date TEXT NOT NULL DEFAULT '', sent_date TEXT NOT NULL DEFAULT '')`)
 		return err
+	}, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`ALTER TABLE usage_collection ADD COLUMN daily_from TEXT NOT NULL DEFAULT '';
+		 ALTER TABLE usage_collection ADD COLUMN daily_sent TEXT NOT NULL DEFAULT '';`)
+		return err
 	}},
 }
 
@@ -50,7 +54,7 @@ func (m *Module) pending(ctx context.Context, now time.Time) (*usagewire.Report,
 }
 
 func (m *Module) clearPending(ctx context.Context) error {
-	_, err := m.deps.Store.SQL().ExecContext(ctx, `UPDATE usage_collection SET pending_date='' WHERE id=1`)
+	_, err := m.deps.Store.SQL().ExecContext(ctx, `UPDATE usage_collection SET pending_date='',daily_from='' WHERE id=1`)
 	return err
 }
 

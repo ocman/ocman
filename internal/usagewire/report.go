@@ -14,6 +14,7 @@ type Report struct {
 	InstallationID string `json:"installationId"`
 	Date           string `json:"date"`
 	Version        string `json:"version"`
+	Daily          *Daily `json:"daily,omitempty"`
 }
 
 var releaseVersion = regexp.MustCompile(`^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(-(dev|rc|beta|alpha)\.[0-9]{1,6})?$`)
@@ -39,5 +40,8 @@ func (r Report) Valid(now time.Time) bool {
 	}
 	today := now.UTC().Format(time.DateOnly)
 	yesterday := now.UTC().AddDate(0, 0, -1).Format(time.DateOnly)
+	if r.Daily != nil {
+		return r.Date == yesterday && r.Version == NormalizeVersion(r.Version) && r.Daily.Valid()
+	}
 	return (r.Date == today || r.Date == yesterday) && r.Version == NormalizeVersion(r.Version)
 }

@@ -28,6 +28,7 @@ func newUsageCollector(server *Server) *usageCollector {
 
 func (c *usageCollector) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/usage", c.collect)
+	mux.HandleFunc("POST /v1/usage/daily", c.collect)
 }
 
 func (c *usageCollector) collect(w http.ResponseWriter, r *http.Request) {
@@ -43,11 +44,16 @@ func (c *usageCollector) collect(w http.ResponseWriter, r *http.Request) {
 	}
 	var report usagewire.Report
 	decoded := &usageResponse{ResponseWriter: w}
-	if !usagewire.ReadJSON(decoded, r, &report) {
+	daily := r.URL.Path == "/v1/usage/daily"
+	read := usagewire.ReadJSON
+	if daily {
+		read = usagewire.ReadDailyJSON
+	}
+	if !read(decoded, r, &report) {
 		c.securityEvent(r.Context(), ip, decoded.status)
 		return
 	}
-	if !report.Valid(c.server.cfg.Now()) {
+	if daily != (report.Daily != nil) || !report.Valid(c.server.cfg.Now()) {
 		c.reject(w, r, ip, http.StatusBadRequest, "invalid usage report")
 		return
 	}

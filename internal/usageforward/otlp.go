@@ -98,10 +98,21 @@ func (f *Forwarder) Forward(ctx context.Context, report *usagewire.Report, ip st
 		if err != nil {
 			return err
 		}
-		f.emit(ctx, "ocman.usage.active", day, now,
+		identity := []attribute.KeyValue{
 			attribute.String("ocman.installation.id", report.InstallationID),
 			attribute.String("ocman.activity.date", report.Date),
-			attribute.String("ocman.version", report.Version))
+			attribute.String("ocman.version", report.Version),
+		}
+		if report.Daily == nil {
+			f.emit(ctx, "ocman.usage.active", day, now, identity...)
+		} else {
+			f.emit(ctx, "ocman.usage.daily", day, now, append(identity, attribute.Int64("ocman.sessions", report.Daily.Sessions))...)
+			for _, model := range report.Daily.Models {
+				f.emit(ctx, "ocman.usage.model.daily", day, now, append(identity,
+					attribute.String("ocman.model", model.Model), attribute.Int64("ocman.sessions", model.Sessions),
+					attribute.Int64("ocman.tokens.input", model.InputTokens), attribute.Int64("ocman.tokens.output", model.OutputTokens))...)
+			}
+		}
 	}
 	f.emit(ctx, "ocman.usage.security", now, now,
 		attribute.String("client.address", ip), attribute.Int("http.response.status_code", status))

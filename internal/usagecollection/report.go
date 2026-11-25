@@ -65,26 +65,30 @@ func (m *Module) sendPending(ctx context.Context) {
 		m.mu.Unlock()
 	}()
 
-	body, err := json.Marshal(report)
-	if err != nil {
-		return
-	}
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "ocman-usage")
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return
-	} // Never log payloads, collector responses or request URLs.
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
+	if !m.post(requestCtx, url, report) {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_ = m.acknowledge(ctx, report)
+}
+
+func (m *Module) post(requestCtx context.Context, url string, report any) bool {
+	body, err := json.Marshal(report)
+	if err != nil {
+		return false
+	}
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "ocman-usage")
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return false
+	} // Never log payloads, collector responses or request URLs.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusNoContent
 }

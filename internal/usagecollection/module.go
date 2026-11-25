@@ -10,12 +10,14 @@ import (
 
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/usagewire"
 )
 
 type Deps struct {
 	Store    *state.DB
 	RelayURL func() string
 	Version  func() string
+	Daily    func(context.Context, time.Time) (usagewire.Daily, error)
 }
 
 type Module struct {
@@ -25,6 +27,7 @@ type Module struct {
 	client      *http.Client
 	now         func() time.Time
 	nextAttempt time.Time
+	nextDaily   time.Time
 	cancel      context.CancelFunc
 }
 
@@ -71,6 +74,7 @@ func (m *Module) Run(ctx context.Context) {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		m.sendPending(ctx)
+		m.sendDaily(ctx)
 		for {
 			select {
 			case <-ctx.Done():
@@ -79,6 +83,7 @@ func (m *Module) Run(ctx context.Context) {
 				m.sendPending(ctx)
 			case <-ticker.C:
 				m.sendPending(ctx)
+				m.sendDaily(ctx)
 			}
 		}
 	})
