@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { V2Notification } from './V2Notification';
@@ -26,6 +26,16 @@ describe('user quick shell output', () => {
       kind: 'shell', shell: { id: 'sh_user', status: 'completed', command: 'pwd', output: '/workspace', userExecuted: true },
     }} />);
     expect(screen.getByTestId('shell-output-block')).toHaveTextContent('/workspace');
+  });
+
+  it('lets the user hide and reopen their own running command output', () => {
+    render(<ToolCallDisplay {...({
+      toolName: 'bash', argsText: 'running\n@user-executed-tool\npwd', result: '/workspace',
+    } as Props)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse output' }));
+    expect(screen.queryByRole('region', { name: 'Live command output' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show live output' }));
+    expect(screen.getByRole('region', { name: 'Live command output' })).toHaveTextContent('/workspace');
   });
 
   it('shows user-executed shell envelopes in compact mode', () => {

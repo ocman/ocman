@@ -37,7 +37,9 @@ describe('v2 shell envelopes', () => {
     const result = '<shell id="sh_test" state="running" command="echo "hello"">\n<img src=x onerror=alert(1)>\n</shell>';
     const { container } = render(<ToolCallDisplay {...({ toolName: 'functions_shell', argsText: 'running', result } as Props)} />);
     expect(screen.getByTestId('bash-spinner')).toBeInTheDocument();
-    expect(screen.getByTestId('shell-output-block').textContent).toContain('echo "hello"\n<img src=x onerror=alert(1)>');
+    expect(screen.getByTestId('shell-output-block')).toHaveTextContent('echo "hello"');
+    fireEvent.click(screen.getByRole('button', { name: 'Show live output' }));
+    expect(screen.getByRole('region', { name: 'Live command output' })).toHaveTextContent('<img src=x onerror=alert(1)>');
     expect(container.querySelector('img')).toBeNull();
   });
 

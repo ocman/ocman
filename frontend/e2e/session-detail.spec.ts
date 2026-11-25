@@ -859,7 +859,7 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
   await expect(assistantBubble).toContainText('1 2 3 4 5');
 });
 
-test('long-running tool call renders partial output before completion', async ({ mockedPage: page }) => {
+test('a running command opens before output and streams inline until completion', async ({ mockedPage: page }) => {
   const streamSessionId = MOCK_SESSION.id;
   const liveSession = mockSessionWithLiveConnection({
     ...MOCK_SESSION,
@@ -879,7 +879,7 @@ test('long-running tool call renders partial output before completion', async ({
       onerror: ((evt: Event) => void) | null = null;
       onmessage: ((evt: MessageEvent) => void) | null = null;
       listeners: Record<string, Array<(evt: MessageEvent) => void>> = {};
-      private timers: number[] = [];
+      private advance?: () => void;
       private seq = 0;
 
       constructor(url: string) {
@@ -906,26 +906,25 @@ test('long-running tool call renders partial output before completion', async ({
           this.emit({ type: 'session.status', status: 'busy', notice: null });
           this.emit({ type: 'part.upserted', part: toolPart('running', ''), final: false });
 
-          let offset = 0;
-          for (let i = 1; i <= 5; i += 1) {
-            this.timers.push(window.setTimeout(() => {
-              if (this.readyState === LongToolEventSource.CLOSED) return;
-              const text = `tool-second-${i}\n`;
-              this.emit({ type: 'part.delta', messageId, partId, field: 'tool.output', offset, text, partType: 'tool' });
-              offset += text.length;
-            }, i * 1_000));
-          }
-
-          this.timers.push(window.setTimeout(() => {
-            if (this.readyState === LongToolEventSource.CLOSED) return;
+          let output = '';
+          let step = 0;
+          this.advance = () => {
+            step += 1;
+            if (step < 3) {
+              const text = Array.from({ length: 30 }, (_, i) => `chunk-${step} line-${i + 1}\n`).join('');
+              this.emit({ type: 'part.delta', messageId, partId, field: 'tool.output', offset: output.length, text, partType: 'tool' });
+              output += text;
+              return;
+            }
             this.emit({
               type: 'part.upserted',
-              part: toolPart('completed', 'tool-second-1\ntool-second-2\ntool-second-3\ntool-second-4\ntool-second-5\n'),
+              part: toolPart('completed', `${output}command finished\n`),
               final: true,
             });
             this.emit({ type: 'session.status', status: 'done', provisional: true, notice: null });
             this.emit({ type: 'turn.ended', outcome: 'done', endedAt: Date.now() });
-          }, 5_500));
+          };
+          window.addEventListener('test:advance-tool-output', this.advance);
         });
       }
 
@@ -935,8 +934,7 @@ test('long-running tool call renders partial output before completion', async ({
 
       close() {
         this.readyState = LongToolEventSource.CLOSED;
-        for (const timer of this.timers) window.clearTimeout(timer);
-        this.timers = [];
+        if (this.advance) window.removeEventListener('test:advance-tool-output', this.advance);
       }
 
       private emit(event: Record<string, unknown>) {
@@ -979,10 +977,23 @@ test('long-running tool call renders partial output before completion', async ({
   await page.goto(SESSION_URL);
   await expect(page.getByTestId('session-layout')).toBeVisible();
 
-  await expect(page.getByText('tool-second-1')).toBeVisible({ timeout: 4_000 });
-  await expect(page.getByText('tool-second-2')).toBeVisible({ timeout: 2_000 });
-  await expect(page.getByText('tool-second-3')).toBeVisible({ timeout: 2_000 });
-  await expect(page.getByText('tool-second-5')).toHaveCount(0, { timeout: 100 });
+  await page.getByRole('button', { name: 'Show live output' }).click();
+  const output = page.getByRole('region', { name: 'Live command output' });
+  await expect(output).toHaveText('Waiting for output…');
+  const advance = () => page.evaluate(() => window.dispatchEvent(new Event('test:advance-tool-output')));
+  await advance();
+  await expect(output).toContainText('chunk-1 line-30');
+  await expect.poll(() => output.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+  // Scrolling up to read earlier lines opts out of following the live tail.
+  await output.evaluate((el) => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); });
+  await advance();
+  await expect(output).toContainText('chunk-2 line-30');
+  expect(await output.evaluate((el) => el.scrollTop)).toBe(0);
+
+  await advance();
+  await expect(output).toHaveCount(0);
+  await expect(page.getByTestId('shell-output-block')).toContainText('command finished');
 });
 
 test('rapid session switching always shows the correct session thread', async ({ mockedPage: page }) => {

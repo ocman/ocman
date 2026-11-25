@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, render, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -79,6 +79,65 @@ describe('ToolCallDisplay bash output', () => {
     expect(screen.getByTestId('bash-spinner')).toBeVisible();
     expect(screen.getByTitle('Running')).toBeInTheDocument();
     expect(screen.queryByTestId('shell-output-block')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /sleep 10/ }));
+    expect(screen.getByText('Waiting for output…')).toBeVisible();
+  });
+
+  it('opens a running command before output arrives and shows updates until it finishes', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderTool({ argsText: 'running\necho hi' });
+    const toggle = screen.getByRole('button', { name: 'Show live output' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Waiting for output…')).not.toBeInTheDocument();
+
+    await user.tab();
+    expect(toggle).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Waiting for output…')).toBeVisible();
+
+    rerender(<ToolCallDisplay {...({ toolName: 'bash', argsText: 'running\necho hi', result: '\x1b[32mhi\x1b[0m' } as Props)} />);
+    const output = screen.getByRole('region', { name: 'Live command output' });
+    expect(within(output).getByText('hi')).toHaveClass('oc-ansi-fg-green');
+    expect(screen.queryByText('Waiting for output…')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse output' }));
+    expect(output).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show live output' }));
+
+    rerender(<ToolCallDisplay {...({ toolName: 'bash', argsText: 'completed\necho hi', result: 'hi\ndone' } as Props)} />);
+    expect(screen.getByTestId('shell-output-block')).toHaveTextContent('hi done');
+    expect(screen.queryByRole('button', { name: 'Show live output' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the last rendered output offscreen and catches up on reentry', () => {
+    let notify: (visible: boolean) => void = () => { throw new Error('Output is not being observed'); };
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+        notify = (isIntersecting) => callback([{ isIntersecting }]);
+      }
+      observe = observe;
+      disconnect = disconnect;
+    });
+    try {
+      const props = { toolName: 'bash', argsText: 'running\necho hi' } as Props;
+      const { rerender, unmount } = renderTool({ ...props, result: 'first line' });
+      fireEvent.click(screen.getByTestId('shell-output-block'));
+      expect(observe).toHaveBeenCalled();
+      expect(screen.getByText('first line')).toBeVisible();
+      act(() => notify(false));
+      rerender(<ToolCallDisplay {...props} result={'first line\nsecond line'} />);
+      expect(screen.getByText('first line')).toBeInTheDocument();
+      expect(screen.queryByText(/second line/)).not.toBeInTheDocument();
+
+      act(() => notify(true));
+      expect(screen.getByText(/second line/)).toBeVisible();
+      unmount();
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('expands compact output for printing', () => {
@@ -145,7 +204,7 @@ describe('ToolCallDisplay bash output', () => {
     const { rerender } = renderTool({ argsText: 'running\nsleep 10' });
 
     expect(screen.getByTestId('bash-spinner').textContent).toBe('⣾');
-    expect(screen.getByTestId('shell-output-block').textContent).toBe('⣾ sleep 10');
+    expect(screen.getByTestId('shell-output-block').textContent).toContain('⣾ sleep 10');
 
     rerender(<ToolCallDisplay {...({
       toolName: 'bash',

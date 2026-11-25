@@ -680,6 +680,12 @@
   overflow: visible;
 }
 .oc-shell-output-toggle { opacity: 0.65; }
+.oc-shell-live-output {
+  display: block;
+  max-height: min(24em, 50vh);
+  overflow: auto;
+  margin-top: 4px;
+}
 .oc-shell-prompt {
   color: var(--accent);
   user-select: none;

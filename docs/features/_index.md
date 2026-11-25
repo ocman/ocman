@@ -40,6 +40,12 @@ visible, ocman automatically fetches earlier history until it leaves the
 viewport or the first message is reached. This also works when hidden tool
 messages leave too little content to scroll.
 
+Click a running shell command, or choose **Show live output**, to open its
+output in the conversation. The panel updates as the provider sends output and
+pauses rendering when you scroll it out of view. Scroll up inside the panel to
+read earlier lines without jumping to the latest output. Some providers only
+send output when the command finishes.
+
 The clock button beside a session's archive button snoozes it for 30 minutes,
 one hour, three hours, until tomorrow at 9:00 AM, or until next Monday at 9:00 AM.
 **Custom...** opens a date-and-time picker. Calendar times use your browser's local
