@@ -356,8 +356,9 @@ test('overview renders summary and scoped date filters', async ({ mockedPage: pa
 test('analytics tabs keep their height when the page overflows', async ({ mockedPage: page }) => {
   await page.setViewportSize({ width: 1280, height: 400 });
   await page.goto('/analytics/overview');
-  await expect(page.getByRole('link', { name: 'Activity' })).toBeVisible();
-  const box = await page.getByRole('navigation', { name: 'Analytics sections' }).boundingBox();
+  const sections = page.getByRole('navigation', { name: 'Analytics sections' });
+  await expect(sections.getByRole('link', { name: 'Session trends', exact: true })).toBeVisible();
+  const box = await sections.boundingBox();
   expect(box?.height).toBeGreaterThan(30);
 });
 

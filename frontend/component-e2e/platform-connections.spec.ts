@@ -41,13 +41,13 @@ test('onboarding: reuse the add flow, create isolated OpenCode, and choose a pro
   await expect(page.getByRole('button', { name: 'Choose a project' })).toBeDisabled();
   await mkdir(screenshots, { recursive: true });
   await page.screenshot({ path: path.join(screenshots, 'onboarding-desktop.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Add platform', exact: true }).click();
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('OpenCode Work');
   await page.getByRole('combobox', { name: 'Configuration', exact: true }).selectOption('isolated');
   await page.screenshot({ path: path.join(screenshots, 'add-opencode-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: 'Check setup', exact: true }).click();
   await expect(page.getByText('Account: work@example.com')).toBeVisible();
-  await page.getByRole('dialog').getByRole('button', { name: 'Add platform', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add connection', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole('button', { name: 'OpenCode Work', exact: true })).toBeVisible();
@@ -57,7 +57,7 @@ test('onboarding: reuse the add flow, create isolated OpenCode, and choose a pro
 
 test('incomplete setup: show sign-in, save for later, and block project launch', async ({ page }) => {
   await page.goto(`${entry}?onboarding&sign-in`);
-  await page.getByRole('button', { name: 'Add platform', exact: true }).click();
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await page.getByRole('combobox', { name: 'Platform', exact: true }).selectOption('codex');
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Codex Work');
   await page.getByRole('combobox', { name: 'Configuration', exact: true }).selectOption('isolated');
@@ -75,11 +75,11 @@ test('incomplete setup: show sign-in, save for later, and block project launch',
 test('phone: stacked rows and keyboard setup without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(entry);
-  await expect(page.getByRole('button', { name: 'Add platform', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add connection', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await mkdir(screenshots, { recursive: true });
   await page.screenshot({ path: path.join(screenshots, 'settings-phone.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Add platform', exact: true }).focus();
+  await page.getByRole('button', { name: 'Add connection', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toBeFocused();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('OpenCode Personal');
@@ -91,10 +91,10 @@ test('phone: stacked rows and keyboard setup without horizontal overflow', async
 
 test('save failures preserve the editor and never show a saved connection', async ({ page }) => {
   await page.goto(`${entry}?onboarding&save-error`);
-  await page.getByRole('button', { name: 'Add platform', exact: true }).click();
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('OpenCode Work');
   await page.getByRole('button', { name: 'Check setup', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Add platform', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add connection', exact: true }).click();
   await expect(page.getByText('Could not save platform connection. Please retry.')).toBeVisible();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
