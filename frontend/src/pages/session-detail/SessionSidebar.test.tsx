@@ -112,6 +112,39 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it.each(['recent', 'projects'] as const)('moves an unpinned child under its pinned parent in %s view', (sidebarView) => {
+    const parent = session({ id: 'parent', title: 'Pinned parent', pinned: true, pinnedAt: 1 });
+    const child = session({ id: 'child', title: 'Unpinned child', parentId: parent.id, directory: '/other' });
+    const grandchild = session({ id: 'grandchild', title: 'Launched by child', directory: child.directory,
+      creator: { platform: child.platform, sessionId: child.id, createdAt: 1 } });
+    const other = session({ title: 'Unrelated session' });
+    const repo: SidebarProjectGroup = { directory: '/repo', sessions: [other, parent], lastUpdated: 1, aggregate: { kind: 'none' } };
+    const childProject = { ...repo, directory: child.directory, sessions: [grandchild, child] };
+    const rendered = renderSidebar({ ...repo, sessions: [grandchild, child, other, parent] }, {}, undefined, undefined, undefined,
+      sidebarView, undefined, undefined, [repo, childProject]);
+
+    const childTitle = screen.getByText(child.title);
+    const boundary = sidebarView === 'recent' ? screen.getByTestId('flat-pinned-divider') : screen.getByText('Unrelated session');
+    expect(childTitle.compareDocumentPosition(boundary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const childRow = childTitle.closest<HTMLElement>('[aria-selected]')!;
+    expect(within(childRow).getByText('└─')).toHaveStyle({ '--depth': '1' });
+    const grandchildRow = screen.getByText(grandchild.title).closest<HTMLElement>('[aria-selected]')!;
+    expect(within(grandchildRow).getByText('└─')).toHaveStyle({ '--depth': '2' });
+    expect(visibleSidebarSessions.current?.map(({ id }) => id)).toEqual([parent.id, child.id, grandchild.id, other.id]);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no match' } });
+    expect(screen.getByText(parent.title)).toBeInTheDocument();
+    expect(screen.queryByText(child.title)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: '' } });
+    const unpinnedParent = { ...parent, pinned: false };
+    rendered.update({ recentSessions: [grandchild, child, other, unpinnedParent],
+      sidebarProjectGroups: [{ ...repo, sessions: [other, unpinnedParent] }, childProject] });
+    expect(screen.getByText(child.title)).toBeInTheDocument();
+    if (sidebarView === 'recent') expect(screen.queryByTestId('flat-pinned-divider')).not.toBeInTheDocument();
+    else expect(screen.queryByText('Pinned', { exact: true })).not.toBeInTheDocument();
+  });
+
   it('orders an archived subagent below its running archived parent in Background', () => {
     const parent = session({ id: 'parent', title: 'Background parent', archived: true, status: 'busy', timeUpdated: 1 });
     const child = session({ id: 'child', title: 'Archived subagent', parentId: parent.id, sourceChild: true,

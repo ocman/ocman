@@ -17,8 +17,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import type { Session } from '../../lib/api';
-import { fuzzyMatch } from '../../lib/format';
-import { matchesSessionSearch } from './sidebarSessionSearch';
 import { useSidebarDrawers } from './useSidebarDrawers';
 import { SidebarDrawers } from './SidebarDrawers';
 import { Resizer } from '../../components/Resizer';
@@ -33,7 +31,7 @@ import { SidebarSessionRow } from './SidebarSessionRow';
 import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
 import { useSessionListFilters } from '../../lib/useSessionListFilters';
-import { hiddenSessionOrigins, matchesSessionListFilters, SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
+import { hiddenSessionOrigins, SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
 import { useSidebarProjectFilter } from './useSidebarProjectFilter';
 import { TmuxClientPopover } from '../../components/TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
@@ -51,6 +49,7 @@ import { InlineAlert } from '../../components/InlineAlert';
 import { useNotifySnapshot } from '../../lib/useNotifyData';
 import { attentionSessionEntries, sessionAttentionKey } from '../../lib/sessionAttention';
 import { SidebarAttentionGroup } from './SidebarAttentionGroup';
+import { sidebarMainSections } from './sidebarMainSections';
 
 export interface SidebarProjectGroup {
   key?: string;
@@ -218,25 +217,10 @@ export const SessionSidebar = memo(function SessionSidebar({
     [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
     query, siblingGitInfos, activeId, activePlatform, alwaysShowPrompts,
   );
-  const filteredProjectGroups = sidebarProjectGroups.flatMap((group) => {
-    const projectMatches = !!query && fuzzyMatch(query, group.directory);
-    const sessions = group.sessions.filter((session) =>
-      !session.pinned && !runningDrawers.keys.has(sessionAttentionKey(session)) &&
-      matchesSessionListFilters(session, listFilters,
-        hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activePlatform && session.platform !== activePlatform ? undefined : activeId),
-    );
-    return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
+  const { pinned: filteredPinnedSessions, flat: flatUnpinned, projects: sortableGroups } = sidebarMainSections({
+    view: sidebarView, recent: recentSessions, groups: sidebarProjectGroups, query, gitInfos: siblingGitInfos,
+    filters: listFilters, hidden: hiddenSessions, drawerKeys: runningDrawers.keys, activeId, activePlatform,
   });
-
-  const filteredPinnedSessions = recentSessions
-    .filter((session) => session.pinned && !session.snoozedUntil && !runningDrawers.keys.has(sessionAttentionKey(session)))
-    .sort((a, b) => b.pinnedAt - a.pinnedAt);
-  const sortableGroups = filteredProjectGroups.filter((g) => !g.isPinned);
-  const flatUnpinned = recentSessions.filter((session) =>
-    !session.pinned && !runningDrawers.keys.has(sessionAttentionKey(session)) &&
-    matchesSessionListFilters(session, listFilters,
-      hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activePlatform && session.platform !== activePlatform ? undefined : activeId),
-  );
 
   const mainSections = useMemo(() => sidebarView === 'recent'
     ? [filteredPinnedSessions, flatUnpinned]
