@@ -4,7 +4,7 @@ import { StrictMode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NewConversation } from './NewConversation';
 import { api, fetchJSON } from '../../lib/api';
-import { subscribeBackendDraftSync, useBackendConversationDrafts, type BackendConversationDraft } from '../../lib/backendConversationDrafts';
+import { persistBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts, type BackendConversationDraft } from '../../lib/backendConversationDrafts';
 import { getConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { resetDraftTextsForTests } from '../../lib/composerDraft';
 import { clearSettingsCache } from '../../lib/projectSettingsCache';
@@ -209,23 +209,39 @@ it('retains the prompt when backend persistence fails', async () => {
   expect(api.startSession).not.toHaveBeenCalled();
 });
 
-it('sends on Enter when background draft saves fail but submission is available', async () => {
+it.each([false, true])('sends on Enter despite autosave failure (late response: %s)', async (late) => {
   const fetcher = vi.mocked(fetch);
   const original = fetcher.getMockImplementation()!;
+  let finishAutosave: ((response: Response) => void) | undefined;
+  let holdAutosave = false;
   fetcher.mockImplementation(async (url, options) => {
     if (options?.method === 'PUT' && new Headers(options.headers).get('X-Ocman-Draft-Intent') !== 'submit') {
+      if (holdAutosave) {
+        holdAutosave = false;
+        return new Promise<Response>((resolve) => { finishAutosave = resolve; });
+      }
       return new Response('autosave unavailable', { status: 503 });
     }
     return original(url, options);
   });
   render(<NewConversation params={record.metadata} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
   const input = await screen.findByRole('textbox');
+  await act(async () => { await persistBackendDraft(id).catch(() => {}); });
   await screen.findByText(/Draft not saved on the backend/);
   fireEvent.input(input, { target: { value: 'Send this anyway' } });
   fireEvent.keyDown(input, { key: 'Enter' });
   await waitFor(() => expect(payload).toMatchObject({ send: { message: 'Send this anyway' } }));
+  holdAutosave = true;
+  const autosave = persistBackendDraft(id).catch(() => {});
+  await waitFor(() => expect(finishAutosave).toBeDefined());
+  const failAutosave = () => act(async () => {
+    finishAutosave!(new Response('autosave unavailable', { status: 503 }));
+    await autosave;
+  });
+  if (!late) await failAutosave();
   record = { ...record, phase: 'accepted', submittedAt: Date.now(), request: payload as BackendConversationDraft['request'] };
   await act(async () => release(json(record, 202)));
+  if (late) await failAutosave();
   await waitFor(() => expect(input).toHaveValue(''));
   expect(screen.queryByText(/Draft not saved on the backend/)).toBeNull();
 });

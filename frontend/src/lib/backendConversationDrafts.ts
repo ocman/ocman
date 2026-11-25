@@ -85,8 +85,12 @@ async function writeBackendDraft(id: string, snapshot: ConversationDraft & { tex
       return { saveErrors, conflicts: state.conflicts[id] ? { ...state.conflicts, [id]: false } : state.conflicts };
     });
   } catch (error) {
-    useBackendConversationDrafts.setState((state) => ({ saveErrors: { ...state.saveErrors, [id]: error instanceof Error ? error.message : String(error) },
-      conflicts: { ...state.conflicts, [id]: error instanceof APIError && error.status === 409 } }));
+    useBackendConversationDrafts.setState((state) => {
+      const current = state.drafts[id];
+      if (current && current.phase !== 'draft') return state;
+      return { saveErrors: { ...state.saveErrors, [id]: error instanceof Error ? error.message : String(error) },
+        conflicts: { ...state.conflicts, [id]: error instanceof APIError && error.status === 409 } };
+    });
     throw error;
   }
 }
@@ -160,7 +164,11 @@ export async function acceptBackendDraft(id: string, request: DurableStartReques
   // The initial submission has already saved the draft with submit intent.
   // Retrying admission must replay the same payload, not save the live editor again.
   const draft = await postJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}/start`, request);
-  useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: draft } }));
+  useBackendConversationDrafts.setState((state) => {
+    const saveErrors = { ...state.saveErrors }; delete saveErrors[id];
+    const conflicts = { ...state.conflicts }; delete conflicts[id];
+    return { drafts: { ...state.drafts, [id]: draft }, saveErrors, conflicts };
+  });
 }
 
 export async function queueBackendDraft(id: string, request: NonNullable<DurableStartRequest['send']>) {
