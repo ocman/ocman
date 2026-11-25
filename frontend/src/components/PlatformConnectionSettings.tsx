@@ -88,7 +88,7 @@ export function OwnerConnectionSettings({ owner }: { owner: string }) {
     }
     await load();
   }
-  if (!inventory) return error ? <PageState compact error title="Platforms unavailable" description={error} onRetry={() => { void load(); }} /> : <LoadingState>Loading platform connections…</LoadingState>;
+  if (!inventory) return error ? <PageState compact error title="Platform connections unavailable" description={error} onRetry={() => { void load(); }} /> : <LoadingState>Loading platform connections…</LoadingState>;
   if (!inventory.supported) return owner === 'local' ? <PlatformSettings /> : <PageState compact title="Connections unavailable" description="This owner does not support named platform connections." />;
   return <PlatformConnections connections={inventory.connections} platforms={inventory.platforms} machineName={owner === 'local' ? 'This machine' : owner}
     error={error} onboarding={!inventory.onboardingComplete} recoveredInput={receipt} onAbandon={abandon}

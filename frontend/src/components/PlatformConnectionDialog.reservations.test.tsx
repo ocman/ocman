@@ -40,7 +40,7 @@ describe('platform setup receipts', () => {
     expect(onCheck).toHaveBeenNthCalledWith(1, input);
     await user.click(screen.getByRole('button', { name: 'Check again' }));
     expect(onCheck).toHaveBeenNthCalledWith(2, { ...input, reservationId: checked.reservationId });
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...input, reservationId: checked.reservationId }, undefined);
   });
 
@@ -58,9 +58,9 @@ describe('platform setup receipts', () => {
     const expected = { ...input, name: 'Renamed', reservationId: checked.reservationId };
     expect(onCheck).toHaveBeenNthCalledWith(2, expected);
     expect(onCheck).toHaveBeenNthCalledWith(3, expected);
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     expect(await screen.findByText('Save response lost')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     expect(onSave).toHaveBeenNthCalledWith(1, expected, undefined);
     expect(onSave).toHaveBeenNthCalledWith(2, expected, undefined);
   });
@@ -76,7 +76,7 @@ describe('platform setup receipts', () => {
     if (field === 'directory') await user.type(screen.getByRole('textbox', { name: /Configuration directory/ }), '/custom');
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
     expect(onCheck.mock.calls[1][0]).not.toHaveProperty('reservationId');
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     expect(onSave.mock.calls[0][0]).toHaveProperty('reservationId', replacement.reservationId);
   });
 
@@ -86,7 +86,7 @@ describe('platform setup receipts', () => {
     await checkInitial(user);
     await user.click(screen.getByRole('button', { name: 'Check again' }));
     expect(await screen.findByText(/The setup reservation changed/)).toBeVisible();
-    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Add platform' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
     expect(onSave).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
     expect(onCheck).toHaveBeenNthCalledWith(3, { ...input, reservationId: checked.reservationId });

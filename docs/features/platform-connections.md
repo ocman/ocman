@@ -1,5 +1,5 @@
 ---
-title: Named platform connections
+title: Platform connections
 weight: 18
 ---
 
@@ -9,13 +9,13 @@ can use the same tool and project without sharing execution state.
 
 ## Add a connection
 
-1. Open **Settings** and select the machine that owns the configuration.
-2. Choose **Add platform**, select the tool and enter a name.
+1. Open **Settings → Platform connections** and select the owning machine.
+2. Choose **Add connection**, select a platform, and enter a connection name.
 3. Choose an existing configuration or a separate configuration, when supported.
 4. Run the displayed native sign-in command on that machine if sign-in is needed.
    Ocman produces the command for the exact configuration you selected. It does
-   not copy credentials or sign in for you.
-5. Check the configuration again, then save it. Choose **Make default** if you
+   not copy credentials or sign in to the native account for you.
+5. Check the configuration again, then save it. Choose **Set default** if you
    want new conversations to use it when no connection is explicitly selected.
 
 Setup can be resumed after a browser reload. Retrying a check or Save reuses the
@@ -25,17 +25,19 @@ setup leaves possible native credentials in place.
 An account check confirms the native tool's local login and configuration. It
 does not guarantee that a model request will succeed or that quota remains.
 
-## Select an account
+<a id="select-an-account"></a>
+
+## Select a connection
 
 Open the model picker in a new conversation. Its tabs use the names of the
-platforms configured on the chosen machine, such as "Claude Work" and
-"Claude Personal". Choose a tab, then a model from that account's catalog.
-Unavailable accounts cannot be selected. Model references keep their normal
+platform connections on the chosen machine, such as "Claude Work" and
+"Claude Personal". Choose a connection, then a model from its catalog.
+Unavailable connections cannot be selected. Model references keep their normal
 native tool/provider namespace.
 
 Every created conversation and fork keeps its connection. Changing the default,
-renaming an account or running out of quota cannot move that conversation to a
-different account. An unavailable selection reports an error instead.
+renaming a connection or running out of quota does not move that session to a
+different connection. An unavailable selection reports an error instead.
 
 Defaults are explicit. A disabled or removed default remains the saved
 preference until you choose another one; Ocman does not silently select a sibling.
@@ -66,7 +68,7 @@ must settle before the change completes. Prompt replies and abort remain
 available while draining.
 
 Removing a connection is not a native account logout. Ocman does not delete its
-credential store or configuration directory. Adding a similarly named account
+credential store or configuration directory. Adding a similarly named connection
 does not acquire the removed connection's conversations.
 
 ## Supported separate configurations

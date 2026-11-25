@@ -3,6 +3,8 @@
 Ocman coordinates coding-agent sessions and the work required to deliver
 software changes.
 
+See [GLOSSARY.md](GLOSSARY.md) for application-wide language.
+
 ## Language
 
 **Plugin workspace**:
@@ -218,6 +220,10 @@ _Avoid_: Item workspace, temporary checkout
 **Delivery base**:
 The target branch and exact revision from which a project's delivery work begins, frozen when its plan is approved.
 _Avoid_: Latest base, current default branch
+
+**Project Delivery**:
+The Factory work that publishes one project's combined changes from a Work Epic in a pull request for review. It does not merge the pull request.
+_Avoid_: Webhook delivery, merge
 
 **Merge-gated dependency**:
 A cross-project dependency that becomes satisfied only when the upstream change is reported merged by its forge.

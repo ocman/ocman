@@ -88,4 +88,4 @@ see [Reviewer configuration](../configuration/#custom-permission-reviewer).
 
 Yes. One hub attaches to other ocman instances over gRPC and shows every
 machine's sessions in one list. It is off by default. See
-[Multi-remote](../features/multi-remote/).
+[Remote machines](../features/multi-remote/).

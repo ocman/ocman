@@ -142,7 +142,7 @@ export const FEATURES: Feature[] = [
   { id: 'conversation', settings: { id: 'conversation', category: 'sessions', label: 'Conversation', mount: 'active', Section: ConversationSection } },
   { id: 'voice', settings: { id: 'voice', category: 'sessions', label: 'Voice', mount: 'active', Section: SpeechSettings } },
   { id: 'session-history', settings: { id: 'session-history', category: 'sessions', label: 'History & archiving', mount: 'always', Section: SessionsSection } },
-  { id: 'platforms', settings: { id: 'platforms', category: 'agents', label: 'Platforms', mount: 'active', Section: PlatformSettings } },
+  { id: 'platforms', settings: { id: 'platforms', category: 'agents', label: 'Platform connections', mount: 'active', Section: PlatformSettings } },
   { id: 'hooks', settings: { id: 'hooks', category: 'agents', label: 'Hooks', mount: 'active', Section: HookPluginSettings, ownSections: true } },
   { id: 'model-fallback', settings: { id: 'model-fallback', category: 'agents', label: 'Model fallback', mount: 'active', Section: ModelFallbackSettings } },
   { id: 'auto-approve', settings: { id: 'auto-approve', category: 'permissions', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection, ownSections: true } },

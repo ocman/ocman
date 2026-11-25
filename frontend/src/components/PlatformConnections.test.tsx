@@ -46,8 +46,8 @@ describe('PlatformConnections', () => {
 
   it('distinguishes loading, initial failure, and successful empty onboarding', async () => {
     const { user, props } = mount({ connections: null, error: 'Owner disconnected' });
-    expect(screen.getByRole('alert')).toHaveTextContent('Platforms unavailable');
-    expect(screen.queryByText('Connect your first platform')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Platform connections unavailable');
+    expect(screen.queryByText('Add your first connection')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(props.onRetry).toHaveBeenCalledOnce();
   });
@@ -55,19 +55,19 @@ describe('PlatformConnections', () => {
   it('shows a loading state without creation controls', () => {
     mount({ connections: null });
     expect(screen.getByRole('status')).toHaveTextContent('Loading platform connections');
-    expect(screen.queryByRole('button', { name: 'Add platform' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
   });
 
   it('uses the same add dialog in onboarding and supports setup later', async () => {
     const onSkip = vi.fn();
     const onContinue = vi.fn();
     const { user } = mount({ connections: [], onboarding: true, onSkip, onContinue });
-    expect(screen.getByText('Connect your first platform')).toBeVisible();
+    expect(screen.getByText('Add your first connection')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Choose a project' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Set up later' }));
     expect(onSkip).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
-    expect(screen.getByRole('dialog', { name: 'Add platform' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
+    expect(screen.getByRole('dialog', { name: 'Add connection' })).toBeVisible();
   });
 
   it('only enables the project step for an enabled ready connection', async () => {
@@ -84,7 +84,7 @@ describe('PlatformConnections', () => {
 
   it('creates an isolated OpenCode connection without trusting client account observations', async () => {
     const { user, props } = mount();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'OpenCode Work');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Configuration' }), 'isolated');
     expect(screen.getByText(/Separate OpenCode config/)).toBeVisible();
@@ -92,14 +92,14 @@ describe('PlatformConnections', () => {
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
     expect(props.onCheck).toHaveBeenCalledWith({ kind: 'opencode', name: 'OpenCode Work', configuration: 'isolated', directory: '', enabled: true });
     expect(await screen.findByText('Account: verified@example.com')).toBeVisible();
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add platform' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add connection' }));
     expect(props.onSave).toHaveBeenCalledWith({ kind: 'opencode', name: 'OpenCode Work', configuration: 'isolated', directory: '', enabled: true }, undefined);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('checks an existing Codex configuration and trims user input', async () => {
     const { user, props } = mount();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Platform' }), 'codex');
     await user.type(screen.getByRole('textbox', { name: 'Name' }), ' Codex Work ');
     await user.type(screen.getByRole('textbox', { name: /Configuration directory/ }), ' /accounts/codex ');
@@ -111,7 +111,7 @@ describe('PlatformConnections', () => {
 
   it('rejects duplicate names across platforms ignoring whitespace and case', async () => {
     const { user, props } = mount();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.type(screen.getByRole('textbox', { name: 'Name' }), ' claude WORK ');
     expect(screen.getByText('A connection with this name already exists.')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Check setup' })).toBeDisabled();
@@ -132,7 +132,7 @@ describe('PlatformConnections', () => {
 
   it('requires confirmation before discarding dirty edits', async () => {
     const { user } = mount();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Unsaved');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('dialog', { name: 'Discard unsaved changes?' })).toBeVisible();
@@ -145,7 +145,7 @@ describe('PlatformConnections', () => {
 
   it('closes a pristine dialog without discard confirmation', async () => {
     const { user } = mount();
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -153,7 +153,7 @@ describe('PlatformConnections', () => {
   it('preserves input on a check failure and retries', async () => {
     const onCheck = vi.fn().mockRejectedValueOnce(new Error('Account probe failed')).mockResolvedValue(ready);
     const { user } = mount({ onCheck });
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Retry account');
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
     expect(await screen.findByText('Account probe failed')).toBeVisible();
@@ -165,7 +165,7 @@ describe('PlatformConnections', () => {
   it('shows sign-in instructions, can recheck, and saves incomplete setup explicitly', async () => {
     const check: ConnectionCheck = { status: 'sign-in-required', directory: '/isolated/codex', instructions: 'Run this command on this machine, then check again.', command: 'CODEX_HOME=/isolated/codex codex login', checks: [{ label: 'Account', ok: false, detail: 'Not signed in.' }] };
     const { user, props } = mount({ onCheck: vi.fn().mockResolvedValue(check) });
-    await user.click(screen.getByRole('button', { name: 'Add platform' }));
+    await user.click(screen.getByRole('button', { name: 'Add connection' }));
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Codex Personal');
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
     expect(await screen.findByText('Sign-in required')).toBeVisible();
@@ -237,7 +237,7 @@ describe('PlatformConnections', () => {
   it('keeps last successful content on refresh failure and supports read-only hosts', async () => {
     const { user, props } = mount({ error: 'Refresh failed', readOnlyReason: 'Manage connections on the owning machine.' });
     expect(screen.getByRole('button', { name: 'Edit Claude Work' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Add platform' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add connection' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Claude Work' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(props.onRetry).toHaveBeenCalledOnce();
@@ -245,7 +245,7 @@ describe('PlatformConnections', () => {
 
   it('disables creation until platform metadata is available', () => {
     mount({ platforms: [], connections: [] });
-    expect(screen.getByRole('button', { name: 'Add platform' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add connection' })).toBeDisabled();
   });
 
   it('disables only the selected named connection by ID', async () => {

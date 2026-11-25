@@ -72,6 +72,9 @@ describe('AnalyticsTab', () => {
     expect(screen.getByText('analytics:overview')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Performance' }))
       .toHaveAttribute('href', '/analytics/performance?dir=%2Frepos&t=7');
+    expect(screen.getByRole('link', { name: 'Session trends' }))
+      .toHaveAttribute('href', '/analytics/activity?dir=%2Frepos&t=7');
+    expect(screen.getByRole('option', { name: 'Session trends' })).toHaveValue('activity');
   });
 
   it('switches sections with the mobile selector', () => {

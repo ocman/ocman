@@ -113,14 +113,14 @@ than filesystem or container isolation.
 
 If a regular session has already planned the work, ask it to import that plan
 into Factory. It creates an Epic, reads `issues` to find the root `mol` ID,
-then calls `import_proposal` with the ticket breakdown and dependency edges.
+then calls `import_proposal` with the proposed Issues and dependencies.
 No dedicated planning session starts.
 
-The imported proposal still requires **human approval**. Review its tickets,
+The imported proposal still requires **human approval**. Review its Issues,
 choose an implementation model, then approve through the action card or Epic
-page. Importing alone does not materialize tickets or start implementation.
+page. Importing alone does not materialize Issues or start implementation.
 
-Include the scope, verification steps, and relevant decisions in the ticket
+Include the scope, verification steps, and relevant decisions in the Issue
 descriptions and proposal rationale. Implementation sessions do not inherit the
 original conversation.
 
@@ -137,9 +137,9 @@ awaiting review. You can request a revision and have the original session call
 must match its exact revision and hash. Approved or rejected plans cannot be
 replaced through import. Proposal history and the pending gate survive restart.
 
-## Formula workflows
+## Formulas {#formula-workflows}
 
-A Formula is a YAML workflow. Its named `steps` contain their own `kind`,
+A Formula is a YAML template for creating a Mol. Its named `steps` contain their own `kind`,
 `needs`, `prompt`, and `config`. Dependencies point to prerequisite step names,
 following the convention used by GitHub Actions jobs. This is ocman's schema,
 not a GitHub Actions workflow file.
@@ -178,7 +178,7 @@ steps:
 ```
 
 Use **Customize Tracer** in Factory configuration to start from the current
-built-in workflow, `ocman/tracer@4`. Expand **Formula source** to edit the YAML
+built-in Formula, `ocman/tracer@4`. Expand **Formula source** to edit the YAML
 in a full-width, 15-line editor that can be resized vertically. Validate and
 preview it before saving an immutable revision. The graph includes implementation
 and every post-implementation check. Expand the implementation phase in an Epic's
@@ -278,11 +278,11 @@ run Formula checks. Factory does not run them on remote hosts yet.
 Factory adds runtime context, repository restrictions, attempt credentials, and
 completion instructions to each prompt. Changing a prompt does not bypass
 permissions, approvals, or commit/PR validation. Planned tasks cannot inject
-delivery nodes into a YAML workflow; delivery is declared in the Formula.
+delivery nodes into a YAML Formula; delivery is declared in the Formula.
 Within an implementation group, use ordinary task dependencies. The legacy
 cross-project merge-gate plan format remains available only to older revisions.
 
-The built-in workflow has been converted to YAML. Historical TOML revisions stay
+The built-in Formula has been converted to YAML. Historical TOML revisions stay
 readable for pinned Epics; their source and hashes are not rewritten. New Epics
 use the selected YAML revision. Runtime step definitions and their project
 instances persist across restarts. Source edits, including comments and formatting,
@@ -307,7 +307,7 @@ the original choice. MCP callers can supply `implementation_model` as a
 
 The Epic page's **Models** controls pick a planning, implementation, and
 verification model for that Epic at any time (`POST
-/api/factory/epics/<id>/models`). A choice there wins over the workflow step's
+/api/factory/epics/<id>/models`). A choice there wins over the Formula step's
 `config.model` and the approval-time choice; Default falls back to them.
 Delivery uses the implementation model. Each Attempt freezes its model when it
 is claimed, so a change mid-implementation affects only work that has not
@@ -411,7 +411,7 @@ Restart interruptions keep the full retry budget.
 ## Project Deliveries
 
 Factory runs a required Project Delivery for each project with executable work.
-YAML workflows wait for the declared checks and approvals across all changed
+With YAML Formulas, Delivery waits for the declared checks and approvals across all changed
 projects. Older revisions allow Delivery as soon as the project's own required
 work succeeds. Starting it seals only that project. The delivery model reviews that
 project's combined changes, runs the required checks, and creates a review-ready
@@ -449,7 +449,7 @@ show the reason rather than failing it automatically.
 
 ## Graph changes and scope expansion
 
-When an agent finds a gap, it can use `mutate_graph` to add tickets or change
+When an agent finds a gap, it can use `mutate_graph` to add Issues or change
 dependencies and descriptions on work that has not started. Factory saves an
 immutable revision of the updated graph and shows an approval card. Review it
 in the card or Epic page. Approval must match the exact revision and hash;
@@ -467,7 +467,7 @@ supported for existing callers.
 The approval preview uses that frozen graph, including parent groups and
 dependencies on other Epics. External endpoints are labelled with their Epic
 ID. The initial proposal must materialize before an agent can edit live work;
-until then, submit a revised proposal so its planned tickets are preserved.
+until then, submit a revised proposal so its planned Issues are preserved.
 
 On the Epic page, open **Plan**. The pending proposal expands automatically
 and has an **Approve revision** button. Its graph marks added Issues and
@@ -498,16 +498,16 @@ approved plan, completed work, clean checkpoint, or successful delivery.
 
 Any open task Issue can leave the Epic instead: **Transfer to issue tracker**
 in the Issue drawer opens a GitHub or Forgejo issue in the project's
-repository (preferring `origin`) with the ticket's title and description,
+repository (preferring `origin`) with the Factory Issue's title and description,
 comments the link on the Factory Issue, and removes it from the Epic so
-delivery no longer waits on it. Factory checks that the ticket can be removed
+delivery no longer waits on it. Factory checks that the Issue can be removed
 and holds it out of dispatch before calling the tracker, and records the
 created issue first, so retrying after a local failure resumes instead of
 creating a duplicate: the drawer then shows **Resume transfer**. Only one
 transfer can be in flight, and each reservation has its own identity, so a
 late reply from an earlier attempt can never record onto or release a newer
 one. If the tracker call fails after it may have reached the tracker, or ends
-without a recorded result, the ticket stays held and the drawer shows **Cancel
+without a recorded result, the Factory Issue stays held and the drawer shows **Cancel
 transfer**, which returns it to the Epic after you have checked the tracker.
 Cancel is refused while the tracker call is still running.
 
@@ -530,7 +530,7 @@ it with the project path and a reason. Factory pauses and preserves that Attempt
 until a user decides. Approval verifies the local Git repository, requires a new
 local-execution acknowledgement, admits it to the project set, and launches an
 additive replan of the remaining work. The new graph needs a separate human
-approval before any new tickets run. Completed Issues and checkpoints remain
+approval before any new Issues run. Completed Issues and checkpoints remain
 intact, and the paused Issue retries only after graph approval and any new blockers succeed.
 Rejection records the response and resumes the same implementation session.
 

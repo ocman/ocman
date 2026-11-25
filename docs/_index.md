@@ -21,10 +21,10 @@ you need to finish.
 
 | Task | Guide |
 | --- | --- |
-| Connect an agent or another account | [Agents and accounts](features/platform-connections.md) |
+| Set up a coding-agent platform or a separate account | [Platform connections](features/platform-connections.md) |
 | Work on several tasks at once | [Worktrees and parallel work](features/#worktrees-and-parallel-work) |
 | Review and follow a pull request | [Pull requests](features/pull-requests.md) |
-| Manage sessions on another machine | [Multi-remote setup](features/multi-remote.md) |
+| Manage sessions on another machine | [Remote machines](features/multi-remote.md) |
 | Schedule a recurring prompt | [Routines](features/routines.md) |
 | Give an agent access to ocman tools | [MCP server](features/mcp.md) |
 | Access ocman over a network | [Authentication](configuration/#authentication) |

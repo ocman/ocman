@@ -335,5 +335,5 @@ itself. Sign-in stays with the CLI: run `claude` to log in or renew it.
   `CLAUDE_CONFIG_DIR`, which should be read-only; and after an upgrade that
   changes ocman's provider protocol, a repository's running supervisor is
   replaced once idle, so new messages there wait until its turns finish.
-- Remote machines: see [Multi-remote](multi-remote.md); Claude runs on, and
+- [Remote machines](multi-remote.md): Claude runs on, and
   signs in as, the machine that owns the session.

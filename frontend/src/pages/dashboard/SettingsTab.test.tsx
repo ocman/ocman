@@ -71,7 +71,7 @@ function render(ui: ReactElement, url = '/settings') {
 describe('SettingsTab actions', () => {
   it('does not duplicate subscription usage as a Provider accounts settings section', () => {
     render(<SettingsTab />, '/settings?tab=agents');
-    expect(screen.getByRole('heading', { name: 'Platforms', level: 3 })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Platform connections', level: 3 })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Provider accounts' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Provider accounts' } });
     expect(screen.queryByRole('button', { name: /Provider accounts/ })).not.toBeInTheDocument();

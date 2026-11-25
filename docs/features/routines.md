@@ -3,8 +3,8 @@ title: Routines
 weight: 4
 ---
 
-Routines save a prompt with an optional project. Run one by hand or give it a schedule.
-Choose how each routine uses OpenCode sessions:
+Routines save a prompt with an optional project. Run one by hand, give it a
+schedule, or trigger it with a webhook. Choose how each routine uses agent sessions:
 
 - **New session** starts a fresh session for every run. This is the default.
 - **Reuse session** starts a session on the first run and continues it later.

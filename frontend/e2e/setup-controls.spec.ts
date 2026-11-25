@@ -100,8 +100,8 @@ for (const width of [1280, 390]) {
       return route.fulfill({ json: { supported: true, onboardingComplete: true, platforms, connections: saved.length ? [{ id: 'cnx_codex_work', kind: 'codex', name: 'Codex Work', configuration: 'isolated', directory: '/config/codex-work', enabled: true, isDefault: false, status: 'ready' }] : [] } });
     });
     await page.goto('/settings?tab=platforms');
-    await page.getByRole('button', { name: 'Add platform', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Add platform', exact: true });
+    await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add connection', exact: true });
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Codex Work');
     await dialog.getByRole('combobox', { name: 'Configuration', exact: true }).selectOption('isolated');
     await dialog.getByRole('button', { name: 'Check setup', exact: true }).click();
@@ -118,7 +118,7 @@ for (const width of [1280, 390]) {
     await expect(dialog.getByRole('status').filter({ hasText: /^Ready$/ })).toBeVisible();
     await expect(dialog.getByText('Dependencies are available.', { exact: true })).toBeVisible();
     await expect(dialog.getByText(command, { exact: true })).toBeHidden();
-    await dialog.getByRole('button', { name: 'Add platform', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Add connection', exact: true }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByRole('button', { name: 'Codex Work', exact: true })).toBeVisible();
     expect(checks).toHaveLength(3);

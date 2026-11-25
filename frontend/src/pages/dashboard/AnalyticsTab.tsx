@@ -11,7 +11,7 @@ import './AnalyticsTab.css';
 
 const sections = [
   ['overview', 'Overview'],
-  ['activity', 'Activity'],
+  ['activity', 'Session trends'],
   ['models', 'Models & Cost'],
   ['performance', 'Performance'],
   ['permissions', 'Permissions'],

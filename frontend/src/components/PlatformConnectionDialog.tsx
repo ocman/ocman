@@ -35,7 +35,7 @@ function initialInput(connection: PlatformConnection | undefined, platforms: Con
 function saveLabel(editing: boolean, check: ConnectionCheck | null) {
   if (editing) return 'Save changes';
   if (!check) return 'Check setup';
-  return check.status === 'ready' ? 'Add platform' : 'Save for later';
+  return check.status === 'ready' ? 'Add connection' : 'Save for later';
 }
 
 function setupKey(input: ConnectionInput) {
@@ -111,14 +111,15 @@ export function PlatformConnectionDialog({ platforms, connections, connection, r
     setOperation('checking');
     setError('');
     try { await checkSetup(requestInput()); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Could not check platform setup. Try again.'); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not check connection setup. Try again.'); }
     finally { lock.current = false; setOperation(null); }
   }
 
-  return <Modal label={connection ? 'Edit platform' : 'Add platform'} onClose={() => { void close(); }} canClose={!busy}>
-    <ModalHeader title={connection ? 'Edit platform' : 'Add platform'}
+  const title = connection ? 'Edit connection' : 'Add connection';
+  return <Modal label={title} onClose={() => { void close(); }} canClose={!busy}>
+    <ModalHeader title={title}
       description={connection ? 'Renaming a connection does not move its sessions or change its account.' : 'Connect a coding tool. Add it again to keep work and personal accounts separate.'}
-      onClose={() => { void close(); }} closeLabel="Close platform setup" canClose={!busy} />
+      onClose={() => { void close(); }} closeLabel="Close connection setup" canClose={!busy} />
     <form onSubmit={event => { event.preventDefault(); void submit(); }}>
       <div className={styles.form}>
         {!connection && <ol className={styles.steps} aria-label="Setup progress">
@@ -129,7 +130,7 @@ export function PlatformConnectionDialog({ platforms, connections, connection, r
           : <ConnectionCheckResult input={input} platform={platform} check={check} />}
         {error && <InlineAlert>{error}</InlineAlert>}
       </div>
-      <ModalFooter label="Platform setup actions">
+      <ModalFooter label="Connection setup actions">
         <Button type="button" onClick={() => { void close(); }} disabled={busy}>Cancel</Button>
         {check && <Button type="button" onClick={() => setCheck(null)} disabled={busy}>Back</Button>}
         {(connection || check) && <Button type="button" disabled={!valid || busy} onClick={() => { void inspect(); }}>{check ? 'Check again' : 'Check setup'}</Button>}
@@ -190,6 +191,6 @@ function ConnectionCheckResult({ input, platform, check }: { input: ConnectionIn
     {check.instructions && <p className={styles.note}>{check.instructions}</p>}
     {check.command && <div className={styles.command}><code>{check.command}</code><CopyButton text={check.command} label="Copy sign-in command" /></div>}
     {check.status !== 'ready' && <p className={styles.hint}>You can save this connection now and finish setup later. It cannot start sessions until setup succeeds.</p>}
-    <p className={styles.hint}>A session stays on the account you select. Ocman will not switch it to another connection automatically.</p>
+    <p className={styles.hint}>A session keeps the connection you select. Ocman will not switch it to another connection automatically.</p>
   </>;
 }

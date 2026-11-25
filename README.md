@@ -19,10 +19,10 @@ Supports [OpenCode](https://github.com/anomalyco/opencode),
 - **Command palette.** One ⌘K palette for jumping between sessions, settings, and actions, with in-app notifications.
 - **Slash commands.** `/new [title]` creates a session, `/clear` archives the current one and starts fresh. Renaming a session is keyboard-driven too.
 - **Tmux integration.** Launch or auto-launch an OpenCode instance inside tmux from the UI.
-- **Routines.** Save a project prompt, run it now, or schedule it in a fresh agent session. History records errors and links to created sessions. See [Routines](docs/features/routines.md).
-- **Multi-remote.** Attach other ocman instances over the network and manage every machine's sessions from one dashboard. Every session carries a host badge, and new-session creation knows which machine has the project. See [Multi-remote](docs/features/multi-remote.md).
+- **Routines.** Run a saved prompt now, on a schedule, or when a webhook arrives. A routine can start or continue a session. Run history shows the result and links to the session. See [Routines](docs/features/routines.md).
+- **Remote machines.** Attach other Ocman instances and manage their sessions from one dashboard. A host badge identifies the owning machine. See [Remote machines](docs/features/multi-remote.md).
 - **Diff and changes view.** Syntax-highlighted diffs inline in the thread, plus a *Changes* sidebar that combines session edits with the working-tree `git` diff.
-- **Stats dashboard.** Per-project metrics, wall-clock totals, token and pricing graphs, system stats.
+- **Analytics.** Compare session concurrency, response and tool time, token usage, and estimated costs. **Activity** shows live background tasks and process resources.
 - **Model picker.** Per-platform favorites and a refreshable catalog, so new models appear without a restart.
 - **Auth.** Optional password gate with rate-limited logins and persistent signed cookies. Off by default for localhost.
 - **PWA.** Installable as a Progressive Web App.
@@ -105,8 +105,10 @@ xattr -dr com.apple.quarantine /Applications/ocman.app
 
 The easiest way to get interactive sessions (composer, permission replies, abort) is to launch
 them from ocman itself, using the command palette (`/wt` for worktrees) or the per-project
-Worktrees view. Ocman requires OpenCode v2 or later; it runs one server per
-machine and can reuse OpenCode’s registered background service.
+Worktrees view. Ocman requires OpenCode v2 or later. The default OpenCode
+configuration shares a server across projects on the same machine and can reuse
+OpenCode's registered background service. A separate platform connection can use
+its own server.
 Ocman does not discover or adopt other OpenCode instances, even with an explicit
 port. Their saved sessions remain readable through ocman’s retained history.
 See [Configuration](docs/configuration/_index.md#managed-opencode-server).
@@ -153,7 +155,7 @@ a host badge. Opening, driving, and creating sessions all route to the
 owning machine automatically.
 
 This is off by default. A plain `./ocman` with no remotes is unchanged.
-See the step-by-step [multi-remote guide](docs/features/multi-remote.md) for TLS,
+See the [remote machines guide](docs/features/multi-remote.md) for TLS,
 security notes, and troubleshooting.
 
 ## Documentation
@@ -161,9 +163,10 @@ security notes, and troubleshooting.
 `docs/` mirrors the site structure: five chapters, same layout in the repo
 and on the rendered site (`make docs`).
 
+- [Glossary](GLOSSARY.md): application terms and naming overlaps.
 - Introduction: [what ocman is, install, first session](docs/introduction/_index.md)
 - Features: [overview](docs/features/_index.md) ·
-  [multi-remote](docs/features/multi-remote.md) ·
+  [remote machines](docs/features/multi-remote.md) ·
   [MCP integration](docs/features/mcp.md) ·
   [routines](docs/features/routines.md)
 - Configuration: [flags, env vars, authentication](docs/configuration/_index.md)

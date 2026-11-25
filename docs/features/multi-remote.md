@@ -1,5 +1,5 @@
 ---
-title: Multi-remote
+title: Remote machines
 weight: 2
 ---
 

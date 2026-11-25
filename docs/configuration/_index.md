@@ -263,7 +263,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-log-file` | _(platform default)_ | Also write the log to this file (plain text, dir `0700`, file `0600`). Default `~/Library/Logs/ocman/ocman.log` on macOS, otherwise `$XDG_STATE_HOME/ocman/ocman.log` (`~/.local/state/ocman/ocman.log`). A file over 10 MB at startup moves to `ocman.log.1`. `-` or `off` logs to stderr only. Check this file when the desktop app fails to start. |
 | `-gui-boot-timeout` | `10s` | With `-gui`, how long to wait for the backend to answer before showing an error dialog instead of opening the window. In `-gui` mode every startup failure shows a native alert (macOS `osascript`, Linux `zenity` when installed) naming the log file. |
 | `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Clients authenticate with the bearer token in `mcp-token` beside `state.db` (see [MCP authentication](../features/mcp.md#authentication)); non-loopback addresses are refused. Empty disables it. |
-| `-platforms` | Saved selection, otherwise `opencode,claudecode` | Override Settings → Platforms for this launch with a comma-separated list (`opencode`, `claudecode`, `codex`). Without `opencode`, the OpenCode binary and database are not needed. See [Claude Code](../features/claude-code.md) and [Codex](../features/codex.md). |
+| `-platforms` | Saved connections, otherwise `opencode,claudecode` | Use legacy platform composition for this launch with a comma-separated list (`opencode`, `claudecode`, `codex`). Does not rewrite saved connections. Without `opencode`, the OpenCode binary and database are not needed. See [Platform connections](../features/platform-connections.md) and [Codex](../features/codex.md). |
 | `-public-base-url` | _(unset)_ | Externally reachable base URL, e.g. `https://ocman.example.ts.net`. Used for the links ocman hands to readers elsewhere (share links, plugin attention notices) and for cookie/origin decisions. Falls back to the listen address, which only works locally. Also `OCMAN_PUBLIC_BASE_URL`. |
 | `-relay-url` | `https://relay-ocman.stenic.io` | Relay base URL for sharing, webhook enrollment and usage reports; overrides `OCMAN_RELAY_URL`. |
 | `-otel` | _(unset)_ | OTLP/HTTP endpoint; falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
@@ -364,9 +364,11 @@ sessions remain readable from the database.
 
 ### Managed OpenCode server
 
-OpenCode runs one server for every project on a machine. Ocman follows that:
+By default, OpenCode projects on the same machine share a server. A separate
+[platform connection](../features/platform-connections.md) can have its own
+native server and database.
 
-- **One server per machine.** When OpenCode's own background service is running (the
+- **Shared server for the default setup.** When OpenCode's own background service is running (the
   `opencode serve --service` that `opencode` starts, registered in
   `~/.local/state/opencode/service.json`), ocman uses it instead of starting a second server
   on the same database. Ocman never stops or restarts that service: `/restart-opencode`
@@ -439,22 +441,18 @@ enable adoption of unmanaged instances.
 
 ## Claude Code
 
-Settings → Platforms selects the coding platforms enabled on this machine,
-including in the desktop app. Saving reloads the backend in the same process,
-keeping the desktop window and managed agent processes running. Active local
-turns, permission/question prompts and queued messages finish before reload.
-New turns are paused during that drain; prompt replies and abort remain available.
-The browser's event streams reconnect to the same address after reload.
-Keep at least one platform enabled. Remote instances use their own settings.
-An explicit `-platforms` flag overrides the saved selection for that launch.
-OpenCode and Claude Code are enabled when no selection has been saved; Codex is opt-in.
+Use **Settings → Platform connections** to add or enable a connection for the
+selected machine, including in the desktop app. Remote machines use their own
+connections. An explicit `-platforms` flag overrides the saved connections for
+that launch without changing them. OpenCode and Claude Code are enabled when no
+selection has been saved; Codex is opt-in.
 
 `-platforms claudecode` enables only Claude Code sessions. Setup, permissions, the opt-in
 terminal-session hooks, subscription usage and limits are described in
 [Claude Code](../features/claude-code.md). Codex is opt-in: add `codex` to the list or
-enable it in Settings → Platforms; see [Codex](../features/codex.md).
+add a Codex connection in Settings → Platform connections; see [Codex](../features/codex.md).
 
-## Multi-remote support (optional)
+## Remote machines (optional) {#multi-remote-support-optional}
 
 Attach other ocman instances over the network and manage every machine's
 sessions from one hub. On a machine you want to manage remotely, start
@@ -473,7 +471,7 @@ ocman -remote-listen 0.0.0.0:8230 -remote-trusted-overlay # Tailscale/WireGuard 
 
 Then attach it from the hub's **Settings → Remotes** page using the
 remote's address and access token. This is off by default, so a fresh install
-with no remotes is unchanged. See [multi-remote](../features/multi-remote.md)
+with no remotes is unchanged. See [Remote machines](../features/multi-remote.md)
 for the full step-by-step guide, security notes, and troubleshooting.
 
 ## OpenTelemetry (optional)

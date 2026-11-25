@@ -39,7 +39,7 @@ describe('owner connection settings', () => {
     mount();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Edit Work' }));
-    const dialog = within(screen.getByRole('dialog', { name: 'Edit platform' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Edit connection' }));
     await user.clear(dialog.getByRole('textbox', { name: 'Name' }));
     await user.type(dialog.getByRole('textbox', { name: 'Name' }), 'Work renamed');
     await user.click(dialog.getByRole('button', { name: 'Save changes' }));
@@ -58,7 +58,7 @@ describe('owner connection settings', () => {
     expect(screen.getByRole('button', { name: 'Work renamed' })).toBeVisible();
     rejectRemoval = false;
     await confirmRemove();
-    expect(await screen.findByText('No platforms connected')).toBeVisible();
+    expect(await screen.findByText('No platform connections')).toBeVisible();
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH').map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
       { name: 'Work renamed' }, { enabled: true }, { default: true }, { enabled: false }, { enabled: true },
     ]);
@@ -79,7 +79,7 @@ describe('owner connection settings', () => {
     await user.click(await screen.findByRole('button', { name: 'Resume setup' }));
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Work');
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
-    await user.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Add platform' }));
+    await user.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Add connection' }));
     await waitFor(() => expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST' && !String(init.body).includes('kind'))).toBe(true));
     expect(readConnectionSetup('box')).toBeUndefined();
   });
@@ -87,7 +87,7 @@ describe('owner connection settings', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/check') ? json({ reservationId: 'stp_failed', error: 'probe failed' }, 409) : json(inventory)));
     mount();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Add platform' }));
+    await user.click(await screen.findByRole('button', { name: 'Add connection' }));
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Work');
     await user.click(screen.getByRole('button', { name: 'Check setup' }));
     expect(await screen.findByText(/Your reservation is kept/)).toBeVisible();
@@ -110,7 +110,7 @@ describe('owner connection settings', () => {
     vi.stubGlobal('fetch', fetch);
     await act(async () => { mount('disconnected'); });
     expect(await screen.findByText('This owner does not support named platform connections.')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Add platform' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add connection' })).not.toBeInTheDocument();
     expect(fetch.mock.calls).toHaveLength(1);
   });
 });

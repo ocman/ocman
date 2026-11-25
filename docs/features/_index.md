@@ -9,10 +9,10 @@ Use this page as a reference for everyday session controls. For setup and
 task-specific instructions, choose a guide below.
 
 {{< cards >}}
-  {{< card link="platform-connections" title="Agents and accounts" subtitle="Connect OpenCode, Claude Code or Codex and manage named accounts." >}}
+  {{< card link="platform-connections" title="Platform connections" subtitle="Set up named configurations for OpenCode, Claude Code or Codex." >}}
   {{< card link="pull-requests" title="Pull requests" subtitle="Review a PR and follow its checks from a session." >}}
   {{< card link="multi-remote" title="Remote machines" subtitle="Connect another machine and manage its sessions." >}}
-  {{< card link="routines" title="Routines" subtitle="Run a saved prompt now or on a schedule." >}}
+  {{< card link="routines" title="Routines" subtitle="Run a saved prompt in a new or existing session." >}}
 {{< /cards >}}
 
 ## Sessions
@@ -40,16 +40,16 @@ visible, ocman automatically fetches earlier history until it leaves the
 viewport or the first message is reached. This also works when hidden tool
 messages leave too little content to scroll.
 
-The clock button beside a conversation's archive button snoozes it for 30 minutes,
+The clock button beside a session's archive button snoozes it for 30 minutes,
 one hour, three hours, until tomorrow at 9:00 AM, or until next Monday at 9:00 AM.
 **Custom...** opens a date-and-time picker. Calendar times use your browser's local
-timezone. Snoozed conversations return automatically within a minute of their
+timezone. Snoozed sessions return automatically within a minute of their
 wake-up time, including after an ocman restart. Activity does not wake them early.
-Opening a conversation keeps its archive or snooze status. Use **Unarchive** or
+Opening a session keeps its archive or snooze status. Use **Unarchive** or
 **Unsnooze** on its sidebar row to restore it explicitly. Restoring also clears
-the owning project's archive marker if it was hiding the conversation.
-Archiving a snoozed conversation again cancels its snooze.
-Snooze hides conversations even when they are pinned or awaiting input, keeping
+the owning project's archive marker if it was hiding the session.
+Archiving a snoozed session again cancels its snooze.
+Snooze hides sessions even when they are pinned or awaiting input, keeping
 their pins for when they return. Enable **Show snoozed** in the sidebar filters
 to see them before their deadline. This filter defaults to off and is separate
 from **Show archived**.
@@ -117,8 +117,9 @@ settings.
 *Changes* sidebar that combines session edits with the working-tree `git`
 diff.
 
-**Stats dashboard.** Per-project metrics, wall-clock totals, token and pricing
-graphs, system stats.
+**Analytics.** Historical metrics for session activity, response and tool time,
+token usage, and estimated costs. Open **Activity** for live background tasks and
+process resources.
 
 Analytics → Performance shows total waiting time per agent, split into agent
 response and tool time. It follows the project, time, agent and model filters.
@@ -126,8 +127,9 @@ Parallel tools count once within each request. Tool time includes permission
 and question waits; incomplete timings appear as unknown. Totals sum request
 durations, so they are not elapsed session time when sessions run in parallel.
 
-Analytics → Activity shows active parallel sessions over time, following the
-project and date filters. Each point is the peak simultaneous session count
+**Analytics → Session trends** shows message activity and parallel sessions over
+time. The concurrency chart follows the project and date filters. Each point is
+the peak simultaneous session count
 within its bucket, starting at one hour and widening for longer ranges.
 Completed assistant timings reconstruct the history on the local machine.
 Overlapping messages in one session count once, subagents count separately,
@@ -197,9 +199,10 @@ results when the window is resized. Inbox uses a list-to-reader layout on phones
 ## Worktrees and parallel work
 
 `/wt` creates a git worktree under `<repo-parent>/.worktrees/<repo>/<slug>/`
-and runs the session in it. One managed OpenCode instance per project serves
-every worktree, so parallel sessions get isolated files, rebuilds and staging
-areas without an extra process each. Child sessions inherit the parent's
+and runs the session in it. Worktrees give parallel sessions separate files and
+staging areas without requiring separate agent runtimes. By default, OpenCode
+shares one server across projects on the machine; a separate platform connection
+can have its own server. Child sessions inherit the parent's
 "Allow always" permissions and its live permission mode, so a YOLO parent
 doesn't spawn children that stall on prompts.
 
@@ -256,9 +259,7 @@ Authorization and other permanent client errors wait for an explicit refresh.
 ## Guides
 
 {{< cards >}}
-  {{< card link="multi-remote" title="Multi-remote" subtitle="Attach other ocman instances and manage every machine from one dashboard." >}}
   {{< card link="mcp" title="MCP server" subtitle="Factory, Inbox, routine, session inspection, and file display tools." >}}
-  {{< card link="routines" title="Routines" subtitle="Save a project prompt, run it now, or schedule it in a fresh session." >}}
   {{< card link="link-previews" title="Link previews" subtitle="Rich cards for forge, Slack, Notion, Linear and Jira links, fetched with this machine's tokens." >}}
   {{< card link="slack" title="Slack integration" subtitle="Run durable ocman conversations from channels and direct chats." >}}
   {{< card link="webhooks" title="Encrypted webhooks" subtitle="Queue provider requests safely while owners or relays are offline." >}}

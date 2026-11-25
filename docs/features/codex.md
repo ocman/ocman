@@ -41,7 +41,7 @@ reads, stores or refreshes your Codex credentials.
    run `pnpm setup`, reopen your terminal and ensure `PNPM_HOME` is on Ocman's
    PATH. Restart Ocman if its PATH changed, then click **Check again**. Nothing
    is installed without clicking **Install**.
-3. Enable Codex in Settings → Platforms, or for one launch:
+3. Add a Codex connection in **Settings → Platform connections**, or enable Codex for one launch:
 
    ```sh
    ocman -platforms opencode,claudecode,codex

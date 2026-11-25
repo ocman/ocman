@@ -58,20 +58,20 @@ export function PlatformConnections({ connections, platforms, machineName, error
   }
 
   if (connections === null) return error
-    ? <PageState compact error title="Platforms unavailable" description={error} onRetry={onRetry} />
+    ? <PageState compact error title="Platform connections unavailable" description={error} onRetry={onRetry} />
     : <LoadingState>Loading platform connections…</LoadingState>;
 
   return <section className={styles.root} aria-label="Platform connections">
     <div className={styles.toolbar}>
-      <div><strong>{onboarding ? 'Connect your first platform' : 'Platform connections'}</strong><p className={styles.hint}>{machineName} · Keep work and personal accounts separate.</p></div>
-      {connections.length > 0 && <Button variant="accent" disabled={!writable || platforms.length === 0} onClick={() => setEditor('new')}>Add platform</Button>}
+      <div><strong>{onboarding ? 'Add your first connection' : 'Platform connections'}</strong><p className={styles.hint}>{machineName} · Keep work and personal accounts separate.</p></div>
+      {connections.length > 0 && <Button variant="accent" disabled={!writable || platforms.length === 0} onClick={() => setEditor('new')}>Add connection</Button>}
     </div>
-    {recoveredInput && <InlineAlert>Unfinished platform setup <Button onClick={() => setEditor('new')}>Resume setup</Button></InlineAlert>}
+    {recoveredInput && <InlineAlert>Unfinished connection setup <Button onClick={() => setEditor('new')}>Resume setup</Button></InlineAlert>}
     {readOnlyReason && <InlineAlert>{readOnlyReason}</InlineAlert>}
     {error && <InlineAlert>{error} <Button onClick={onRetry} size="small">Retry</Button></InlineAlert>}
-    {connections.length === 0 ? <PageState compact icon="bi-plug" title="No platforms connected"
+    {connections.length === 0 ? <PageState compact icon="bi-plug" title="No platform connections"
       description="Connect OpenCode, Claude Code or Codex. Already signed in on this machine? Reuse that configuration, or create a separate one for another account.">
-      <Button variant="accent" disabled={!writable || platforms.length === 0} onClick={() => setEditor('new')}>Add platform</Button>
+      <Button variant="accent" disabled={!writable || platforms.length === 0} onClick={() => setEditor('new')}>Add connection</Button>
     </PageState> : <DataTableGroup label={machineName} noun="connections" count={connections.length}>
       {connections.map(connection => <DataTableRow key={connection.id}
         primary={<div className={styles.name}><PlatformLogo platform={connection.kind} /><DataTableRowButton disabled={!writable} onClick={() => setEditor(connection)}>{connection.name}</DataTableRowButton>{connection.isDefault && <span className={styles.badge}>{connection.enabled ? 'Default' : 'Default (disabled)'}</span>}</div>}
@@ -91,7 +91,7 @@ export function PlatformConnections({ connections, platforms, machineName, error
     {actionError && <InlineAlert>{actionError}</InlineAlert>}
     {notice && <p role="status">{notice}</p>}
     {onboarding && <div className={styles.onboardingActions}>
-      <span className={styles.hint}>Set a ready connection as the default before choosing a project. You can add more platforms in Settings at any time.</span>
+      <span className={styles.hint}>Set a ready connection as the default before choosing a project. You can add more connections in Settings at any time.</span>
       <ButtonGroup label="Onboarding actions">
         {onSkip && <Button onClick={onSkip}>Set up later</Button>}
         {onContinue && <Button variant="accent" disabled={!connections.some(value => value.isDefault && value.enabled && value.status === 'ready')} onClick={onContinue}>Choose a project</Button>}

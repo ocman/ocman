@@ -26,7 +26,7 @@ Required:
   CLI and log in. OpenCode and Claude Code are enabled by default; a missing
   OpenCode database does not prevent using Claude. For Codex, install the
   `codex` CLI, Node.js 22+ and `codex-acp`, sign in, and enable it in
-  Settings → Platforms. Settings shows the adapter install command, and setup
+  Settings → Platform connections. Settings shows the adapter install command, and setup
   checks these prerequisites only when Codex is enabled. See
   [Codex setup](../features/codex.md#setup).
 - **git**: `brew install git`.
