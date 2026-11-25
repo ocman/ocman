@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rand"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -248,6 +249,9 @@ func fakeGitHubServer(t *testing.T) (*httptest.Server, *github.Client) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/repos/test/rate-limited/pulls":
+			w.Header().Set("Retry-After", "3600")
+			w.WriteHeader(http.StatusTooManyRequests)
 		case strings.HasSuffix(r.URL.Path, "/pulls/42"):
 			_, _ = w.Write([]byte(`{
 				"number":42,"title":"Patch","body":"body","state":"open","html_url":"https://github.com/alice/myproj/pull/42",
@@ -289,8 +293,23 @@ func fakeGitHubServer(t *testing.T) (*httptest.Server, *github.Client) {
 			http.NotFound(w, r)
 		}
 	}))
-	client := github.NewWithCredentials(srv.URL, "test-token", srv.Client())
+	// GitHub budgets outlive individual fixtures, and loopback ports can be reused.
+	client := github.NewWithCredentials(srv.URL, rand.Text(), srv.Client())
 	return srv, client
+}
+
+func TestFakeGitHubServerDoesNotReuseRateLimitedCredential(t *testing.T) {
+	upstream, client := fakeGitHubServer(t)
+	defer upstream.Close()
+	// Pretend a previous fixture used this loopback address before it was reused.
+	previous := github.NewWithCredentials(upstream.URL, "test-token", upstream.Client())
+	if _, limit, err := previous.ListPRs(t.Context(), "test/rate-limited", forge.ListOptions{}); err != nil || !limit.Limited {
+		t.Fatalf("expected previous fixture to be rate limited, got %v, %v", limit, err)
+	}
+	prs, limit, err := client.ListPRs(t.Context(), "alice/myproj", forge.ListOptions{})
+	if err != nil || limit.Limited || len(prs) != 1 {
+		t.Fatalf("fresh fixture inherited rate limit: prs=%d, limit=%v, err=%v", len(prs), limit, err)
+	}
 }
 
 func TestProjectForgeEndpointsRequireConfiguredClient(t *testing.T) {

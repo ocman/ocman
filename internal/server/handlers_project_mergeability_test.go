@@ -89,7 +89,8 @@ func TestProjectPRMergeabilityReviewFailure(t *testing.T) {
 				_, _ = w.Write([]byte(`{"mergeable":true}`))
 			}))
 			defer upstream.Close()
-			srv.integrations.GitHub = github.NewWithCredentials(upstream.URL, "test-token", upstream.Client())
+			// The simulated backoff must not carry over to fixtures that reuse the port.
+			srv.integrations.GitHub = github.NewWithCredentials(upstream.URL, t.Name(), upstream.Client())
 			rr := httptest.NewRecorder()
 			serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
 			wantStatus := http.StatusBadGateway
