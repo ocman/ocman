@@ -157,7 +157,8 @@ export function shouldArchiveBackendDraft(record?: BackendConversationDraft) {
 }
 
 export async function acceptBackendDraft(id: string, request: DurableStartRequest) {
-  await persistBackendDraft(id);
+  // The initial submission has already saved the draft with submit intent.
+  // Retrying admission must replay the same payload, not save the live editor again.
   const draft = await postJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}/start`, request);
   useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: draft } }));
 }

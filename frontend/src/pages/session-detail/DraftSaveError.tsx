@@ -15,9 +15,22 @@ type Props = { id: string; error?: string; retry: () => Promise<void>; navigate:
 export function DraftSaveError({ id, error, retry, navigate, getLocalText }: Props) {
   const conflict = useBackendConversationDrafts((state) => state.conflicts[id]);
   const [open, setOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  async function resolve() {
+    const text = getLocalText?.();
+    if (text !== undefined) saveDraft(id, text);
+    if (conflict) {
+      setOpen(true);
+      return;
+    }
+    setRetrying(true);
+    try { await retry(); }
+    catch { /* The save store reports the latest failure in this warning. */ }
+    finally { setRetrying(false); }
+  }
   if (!error && !open) return null;
   return <>
-    {error && <InlineAlert onRetry={conflict ? () => { const text = getLocalText?.(); if (text !== undefined) saveDraft(id, text); setOpen(true); } : retry}>Draft not saved on the backend: {error}</InlineAlert>}
+    {error && <InlineAlert tone="warning" retryLabel="Resolve" retrying={retrying} onRetry={() => void resolve()}>Draft not saved on the backend: {error}</InlineAlert>}
     {open && <DraftConflict id={id} onClose={() => setOpen(false)} navigate={navigate} />}
   </>;
 }

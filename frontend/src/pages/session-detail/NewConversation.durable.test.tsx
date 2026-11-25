@@ -155,7 +155,7 @@ it('waits for the chosen server route before mounting or autosaving recovered se
   const unsubscribe = subscribeBackendDraftSync();
   try {
     act(() => useBackendConversationDrafts.setState({ conflicts: { [id]: true }, saveErrors: { [id]: 'conflict' } }));
-    fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
     await screen.findByRole('textbox', { name: 'Server version' });
     fireEvent.click(screen.getByRole('button', { name: 'Use server version' }));
     await waitFor(() => expect(navigate).toHaveBeenCalled());
@@ -207,4 +207,25 @@ it('retains the prompt when backend persistence fails', async () => {
   await waitFor(() => expect(input).not.toBeDisabled());
   expect(input).toHaveValue('do not lose this');
   expect(api.startSession).not.toHaveBeenCalled();
+});
+
+it('sends on Enter when background draft saves fail but submission is available', async () => {
+  const fetcher = vi.mocked(fetch);
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (url, options) => {
+    if (options?.method === 'PUT' && new Headers(options.headers).get('X-Ocman-Draft-Intent') !== 'submit') {
+      return new Response('autosave unavailable', { status: 503 });
+    }
+    return original(url, options);
+  });
+  render(<NewConversation params={record.metadata} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
+  const input = await screen.findByRole('textbox');
+  await screen.findByText(/Draft not saved on the backend/);
+  fireEvent.input(input, { target: { value: 'Send this anyway' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => expect(payload).toMatchObject({ send: { message: 'Send this anyway' } }));
+  record = { ...record, phase: 'accepted', submittedAt: Date.now(), request: payload as BackendConversationDraft['request'] };
+  await act(async () => release(json(record, 202)));
+  await waitFor(() => expect(input).toHaveValue(''));
+  expect(screen.queryByText(/Draft not saved on the backend/)).toBeNull();
 });

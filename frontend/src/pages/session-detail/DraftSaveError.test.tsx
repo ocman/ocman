@@ -19,10 +19,12 @@ beforeEach(() => {
   saveDraft(id, 'local text');
 });
 
-it('preserves the live composer on cancel and shows both versions only after Retry', async () => {
+it('preserves the live composer on cancel and shows both versions only after Resolve', async () => {
   render(<DraftSaveError id={id} error="conflict" retry={vi.fn()} navigate={vi.fn()} getLocalText={() => 'latest typing'} />);
   expect(screen.queryByRole('dialog')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+  const warning = screen.getByRole('status');
+  expect(warning).toHaveAttribute('data-tone', 'warning');
+  fireEvent.click(within(warning).getByRole('button', { name: 'Resolve' }));
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByRole('textbox', { name: 'My version' })).toHaveValue('latest typing');
   expect(await within(dialog).findByRole('textbox', { name: 'Server version' })).toHaveValue('server text');
@@ -34,7 +36,7 @@ it('preserves the live composer on cancel and shows both versions only after Ret
 it.each(['Keep my edits', 'Use server version'])('requires an explicit %s choice', async (label) => {
   const navigate = vi.fn();
   render(<DraftSaveError id={id} error="conflict" retry={vi.fn()} navigate={navigate} />);
-  fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
   const choice = await screen.findByRole('button', { name: label });
   await screen.findByRole('textbox', { name: 'Server version' });
   await act(async () => { fireEvent.click(choice); });
@@ -47,7 +49,7 @@ it('keeps local edits through load and resolution failures and reloads the serve
   vi.mocked(loadBackendDraftConflict).mockRejectedValueOnce(new Error('offline'));
   vi.mocked(resolveBackendDraftConflict).mockRejectedValueOnce(new Error('changed again'));
   render(<DraftSaveError id={id} error="conflict" retry={vi.fn()} navigate={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
   const dialog = screen.getByRole('dialog');
   await within(dialog).findByText('offline');
   fireEvent.click(within(dialog).getByRole('button', { name: /Retry/ }));
@@ -58,4 +60,20 @@ it('keeps local edits through load and resolution failures and reloads the serve
   fireEvent.click(within(dialog).getByRole('button', { name: /Retry/ }));
   await within(dialog).findByRole('textbox', { name: 'Server version' });
   expect(loadBackendDraftConflict).toHaveBeenCalledTimes(3);
+});
+
+it('resaves the live text on Resolve without opening a conflict dialog for a save failure', async () => {
+  useBackendConversationDrafts.setState({ conflicts: {} });
+  let fail!: (error: Error) => void;
+  const retry = vi.fn(() => new Promise<void>((_, reject) => { fail = reject; }));
+  render(<DraftSaveError id={id} error="offline" retry={retry} navigate={vi.fn()} getLocalText={() => 'latest typing'} />);
+  const button = screen.getByRole('button', { name: 'Resolve' });
+  fireEvent.click(button);
+  expect(retry).toHaveBeenCalledOnce();
+  expect(getDraft(id)).toBe('latest typing');
+  expect(button).toBeDisabled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await act(async () => fail(new Error('still offline')));
+  expect(button).toBeEnabled();
+  expect(screen.getByRole('status')).toHaveTextContent('offline');
 });

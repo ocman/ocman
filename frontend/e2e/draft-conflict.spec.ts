@@ -33,15 +33,15 @@ for (const width of [1280, 390]) for (const choice of ['Keep my edits', 'Use ser
   // The other browser commits B after this browser has recovered A.
   draft = { ...draft, revision: 'B', metadata: { ...draft.metadata, text: 'Peer edits', title: 'Peer title' } };
   await composer.fill('My edits');
-  const alert = page.getByRole('alert').filter({ hasText: 'Draft not saved' });
+  const warning = page.getByRole('status').filter({ hasText: 'Draft not saved' });
   if (choice === 'Send over an old draft') {
-    await expect(alert).toBeVisible();
+    await expect(warning).toBeVisible();
     await composer.press('Enter');
     await expect.poll(() => submitted, { timeout: 5000 }).toBe('My edits');
-    await expect(alert).not.toBeVisible();
+    await expect(warning).not.toBeVisible();
     return;
   }
-  await alert.getByRole('button', { name: /Retry/ }).click();
+  await warning.getByRole('button', { name: 'Resolve', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Resolve draft conflict' });
   await expect(dialog.getByRole('textbox', { name: 'My version' })).toHaveValue('My edits');
   await expect(dialog.getByRole('textbox', { name: 'Server version' })).toHaveValue('Peer edits');
