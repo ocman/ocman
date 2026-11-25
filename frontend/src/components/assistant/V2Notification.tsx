@@ -14,6 +14,14 @@ export function V2Notification({ notification }: { notification: NonNullable<Ret
       addResult={noop} resume={noop} respondToApproval={noop}
     />;
   }
+  if (notification.kind === 'handback-reminder') {
+    return <section className="oc-tool oc-tool-task oc-task-notification" aria-label="System notice">
+      <div className="oc-tool-header">
+        <span className="oc-tool-label">System notice</span>
+      </div>
+      <div className="oc-task-result oc-task-result-expanded">{notification.body}</div>
+    </section>;
+  }
   const task = notification.subagent;
   return <TaskNotification notification={{
     summary: task.description, status: task.status, result: task.output,

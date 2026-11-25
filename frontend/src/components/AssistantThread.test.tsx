@@ -185,6 +185,24 @@ it.each([
   expect(container.querySelector('.oc-msg-system')?.classList.contains('oc-msg-tools')).toBe(name !== 'subagent');
 });
 
+it('shows the handback enforcement reminder as a system notice rather than a user message', () => {
+  threadState.renderUser = true;
+  message.content = [{ type: 'text', text: '[handback-send-enforce] Your report has not been delivered. Call SubagentHandback({message: <your full report>}) now; the call ends your run.' }];
+  const { container } = render(<AssistantThread />);
+  const notice = screen.getByRole('region', { name: 'System notice' });
+  expect(notice).toHaveTextContent('Your report has not been delivered.');
+  expect(notice).toHaveTextContent('SubagentHandback({message: <your full report>})');
+  expect(container.querySelector('.oc-msg-user')).not.toBeInTheDocument();
+});
+
+it('does not treat ordinary text mentioning the handback tag as a system notice', () => {
+  threadState.renderUser = true;
+  message.content = [{ type: 'text', text: '[handback-send-enforce] Can you explain this reminder?' }];
+  const { container } = render(<AssistantThread />);
+  expect(container.querySelector('.oc-msg-user')).toHaveTextContent('Can you explain this reminder?');
+  expect(screen.queryByRole('region', { name: 'System notice' })).not.toBeInTheDocument();
+});
+
 class StubResizeObserver {
   observe() {}
   disconnect() {}
