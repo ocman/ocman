@@ -13,8 +13,8 @@ func missingSession(err error) bool {
 	return errors.Is(err, platforms.ErrNotFound) || errors.Is(err, db.ErrSessionNotFound)
 }
 
-// Not-found can race creation or source replacement. Only a complete inventory
-// from this worker's bound source proves that the queued read is obsolete.
+// Not-found can race creation or source replacement. Confirm it against the
+// bound source before treating the queued read as obsolete.
 func (w *sourceWorker) reconcileMissing(ctx context.Context, id string, ticket uint64) (bool, error) {
 	stored, err := w.module.deps.Store.SessionState(ctx, statev2.Key{InstanceID: w.instance.ID, SessionID: id})
 	if err != nil {
@@ -22,6 +22,15 @@ func (w *sourceWorker) reconcileMissing(ctx context.Context, id string, ticket u
 	}
 	readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
 	defer cancel()
+	if reader, ok := w.source.Reader.(platforms.HistoryPresenceReader); ok {
+		present, err := reader.HistorySessionExists(readCtx, id)
+		if !errors.Is(err, platforms.ErrUnsupported) {
+			if err != nil || present {
+				return false, err
+			}
+			return true, w.resolveMissingState(ctx, id, ticket, stored)
+		}
+	}
 	entries, deferred, err := readInventory(readCtx, w.source.Reader)
 	if err != nil || deferred > 0 {
 		return false, err

@@ -18,6 +18,13 @@ func (a *Adapter) HistoryIdentity(ctx context.Context) (platforms.HistoryIdentit
 	return platforms.HistoryIdentity{Platform: string(PlatformID), SourceKey: key, Name: "OpenCode"}, err
 }
 
+func (a *Adapter) HistorySessionExists(ctx context.Context, id string) (bool, error) {
+	if a.db == nil {
+		return false, fmt.Errorf("opencode history source unavailable")
+	}
+	return a.db.HistorySessionExists(ctx, id)
+}
+
 func (a *Adapter) HistoryInventory(ctx context.Context) ([]db.HistoryEntry, error) {
 	if a.db == nil {
 		return nil, fmt.Errorf("opencode history source unavailable")

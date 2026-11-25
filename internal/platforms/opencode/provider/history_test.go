@@ -26,6 +26,11 @@ func TestHistoryAdapterNeverNeedsLiveDiscovery(t *testing.T) {
 	if err != nil || len(entries) != 1 || entries[0].ID != "session" {
 		t.Fatalf("inventory: %+v %v", entries, err)
 	}
+	for id, want := range map[string]bool{"session": true, "deleted-helper": false} {
+		if present, err := a.HistorySessionExists(t.Context(), id); err != nil || present != want {
+			t.Fatalf("presence of %q = %v, %v; want %v", id, present, err, want)
+		}
+	}
 	snapshot, err := a.HistorySnapshot(t.Context(), "session")
 	if err != nil || snapshot.Session.ID != "session" {
 		t.Fatalf("snapshot: %+v %v", snapshot, err)
@@ -36,6 +41,9 @@ func TestHistoryAdapterNeverNeedsLiveDiscovery(t *testing.T) {
 	}
 	if _, err := a.HistoryInventory(t.Context()); err == nil {
 		t.Fatal("accepted missing inventory")
+	}
+	if _, err := a.HistorySessionExists(t.Context(), "session"); err == nil {
+		t.Fatal("treated unavailable source as absence")
 	}
 	if _, err := a.HistorySnapshot(t.Context(), "session"); err == nil {
 		t.Fatal("accepted missing snapshot")

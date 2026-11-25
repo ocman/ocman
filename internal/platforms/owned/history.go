@@ -77,6 +77,27 @@ func (a *Adapter) resolveDeferredHistoryIdentity(ctx context.Context, nativeID s
 	return row, err
 }
 
+func (a *Adapter) HistorySessionExists(ctx context.Context, id string) (bool, error) {
+	reader, ok := a.native.(platforms.HistoryPresenceReader)
+	if !ok {
+		return false, platforms.ErrUnsupported
+	}
+	nativeID, err := a.nativeID(ctx, id)
+	if errors.Is(err, platforms.ErrNotFound) {
+		// The catalog did not resolve this ID to an accessible native binding.
+		// Only an inventory can confirm absence in canonical ID space.
+		return false, platforms.ErrUnsupported
+	}
+	if err != nil {
+		return false, err
+	}
+	exists, err := reader.HistorySessionExists(ctx, nativeID)
+	if err != nil || exists {
+		return exists, err
+	}
+	return false, a.checkSource(ctx)
+}
+
 func (a *Adapter) HistoryInventory(ctx context.Context) ([]db.HistoryEntry, error) {
 	reader, ok := a.native.(platforms.HistoryReader)
 	if !ok {

@@ -66,6 +66,12 @@ func (d *DB) HistorySourceKey(ctx context.Context) (string, error) {
 	return path, err
 }
 
+func (d *DB) HistorySessionExists(ctx context.Context, id string) (bool, error) {
+	var exists bool
+	err := d.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM session WHERE id = ?)`, id).Scan(&exists)
+	return exists, err
+}
+
 func (d *DB) HistoryInventory(ctx context.Context) ([]HistoryEntry, error) {
 	// Newest first, so the sessions a user is most likely to resume import first.
 	rows, err := d.db.QueryContext(ctx, `SELECT id, CAST(time_updated AS TEXT) FROM session ORDER BY time_updated DESC, id`)

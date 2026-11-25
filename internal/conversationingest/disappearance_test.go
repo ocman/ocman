@@ -137,6 +137,53 @@ func TestConfirmedDisappearanceRetainsConversation(t *testing.T) {
 	}
 }
 
+type presenceCheckingFeed struct {
+	*disappearingFeed
+	check func(string) (bool, error)
+}
+
+func (f *presenceCheckingFeed) HistorySessionExists(_ context.Context, id string) (bool, error) {
+	return f.check(id)
+}
+
+func TestMissingSnapshotUsesTargetedSourceCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		present  bool
+		checkErr error
+		deleted  bool
+	}{
+		{name: "gone", deleted: true},
+		{name: "appeared after snapshot", present: true},
+		{name: "source unavailable", checkErr: errors.New("source offline")},
+		{name: "unsupported falls back", checkErr: platforms.ErrUnsupported, deleted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, f := disappearanceWorker(t)
+			f.snapshotErr = platforms.ErrNotFound
+			f.entries = nil
+			if !errors.Is(tc.checkErr, platforms.ErrUnsupported) {
+				f.inventoryErr = errors.New("full inventory unavailable")
+			}
+			calls := 0
+			source := &presenceCheckingFeed{disappearingFeed: &disappearingFeed{f}, check: func(id string) (bool, error) {
+				calls++
+				if id != "session" {
+					t.Fatalf("checked %q instead of the missing session", id)
+				}
+				return tc.present, tc.checkErr
+			}}
+			w.source.Reader, w.feed = source, source
+			w.module.Notify("feed", "session")
+			w.drainFeed(t.Context())
+			s, err := w.module.deps.Store.SessionState(t.Context(), feedKey(w))
+			if err != nil || s.SourceDeleted != tc.deleted || calls != 1 {
+				t.Fatalf("retained session deleted = %v, lookup calls = %d, read error = %v; want deleted = %v and one lookup", s.SourceDeleted, calls, err, tc.deleted)
+			}
+		})
+	}
+}
+
 type inventoryObservedFeed struct {
 	*disappearingFeed
 	afterInventory func()

@@ -73,6 +73,13 @@ type HistoryReader interface {
 	HistorySnapshot(context.Context, string) (*db.HistorySnapshot, error)
 }
 
+// HistoryPresenceReader checks one ID against the same source as HistoryReader.
+// A false result with no error confirms absence from that source. Return
+// ErrUnsupported when the check requires a complete inventory instead.
+type HistoryPresenceReader interface {
+	HistorySessionExists(context.Context, string) (bool, error)
+}
+
 // HistoryFamilyReader discovers a session and its native descendants without
 // inventorying unrelated sessions. It is not an authoritative deletion inventory.
 type HistoryFamilyReader interface {

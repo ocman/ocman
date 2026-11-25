@@ -44,6 +44,7 @@ flowchart LR
     Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox, recent replay inputs)]
     Import -->|throttled sweep expires raw data only| History
     Commit -->|post-commit content receipts| Adapters
+    Import -->|targeted presence check after a missing snapshot| Adapters
     Import -->|confirmed-absence refresh results| Adapters
     Import -->|first complete fresh import callback| Archive[autoarchive<br/>one-time session selection]
     Adapters -->|canonical observation snapshot<br/>after status, prompt and background bootstrap| Archive
@@ -83,8 +84,9 @@ flowchart LR
   background wait and bypass its budget; live updates are not CPU-throttled.
   Shutdown cancels the wait, preserving each completed snapshot's checkpoint.
 - Source deletion never removes retained history.
-  A missing snapshot requires a complete source inventory to confirm absence;
-  failed or deferred inventories cannot turn a read failure into a deletion.
+  After a missing OpenCode snapshot, ingestion checks the bound native ID with
+  an indexed lookup. Sources without a targeted check require a complete
+  inventory. A failed check or a deferred inventory cannot confirm absence.
   Confirmed absence resolves captured refresh tickets as not-found, rather than
   successful content validation, without acknowledging newer requests. Feed
   batches continue past individual failures and retry only unapplied events,
