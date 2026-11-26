@@ -27,8 +27,15 @@ func ownerWatchEventFixture(t *testing.T) (*Server, *Server, context.Context) {
 	if _, err := owner.stateDB.SQL().ExecContext(t.Context(), `INSERT INTO session_pull_request VALUES(?,?,?,?,?,?)`, "fake", "s1", "github.com", "team/repo", 42, string(payload)); err != nil {
 		t.Fatal(err)
 	}
-	rpc := remote.NewServer(owner.registry, owner.router().Local(), "machine", "test").UsePullRequests(owner.RemotePullRequestOperation).
-		UseSessionChanges(owner.StreamRemoteSessionChanges)
+	rpc := remote.NewServer(owner.registry, owner.router().Local(), "machine", "test").UseSessionChanges(owner.StreamRemoteSessionChanges)
+	rpc.UsePullRequests(func(ctx context.Context, platform string, req platforms.PullRequestRequest) platforms.PullRequestResponse {
+		// The sidebar's initial snapshot also invalidates s1. Disable that
+		// independent path so these tests only observe the owner event stream.
+		if req.Operation == "sidebar-links" {
+			return platforms.PullRequestResponse{Status: http.StatusBadRequest}
+		}
+		return owner.RemotePullRequestOperation(ctx, platform, req)
+	})
 	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, rpc)
 	if err != nil {
 		t.Fatal(err)
