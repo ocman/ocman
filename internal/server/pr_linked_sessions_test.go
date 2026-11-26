@@ -4,8 +4,31 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/projectforge"
 )
+
+type prSidebarSnapshotPlatform struct {
+	*fakePlatform
+	ready bool
+}
+
+func (p *prSidebarSnapshotPlatform) PullRequestSidebar() ([]platforms.PullRequestSidebarLink, bool) {
+	return nil, p.ready
+}
+
+func TestSidebarPRLinkedSessionsDistinguishesUnavailableFromEmpty(t *testing.T) {
+	s, reg := newSessionsTestServer(t)
+	p := &prSidebarSnapshotPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:fake"}}
+	reg.Register(p)
+	if got, err := s.sidebarPRLinkedSessions(t.Context(), "box", "github.com", "team/repo"); err == nil || got != nil {
+		t.Fatalf("before sync: links=%+v err=%v", got, err)
+	}
+	p.ready = true
+	if got, err := s.sidebarPRLinkedSessions(t.Context(), "box", "github.com", "team/repo"); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("after empty sync: links=%+v err=%v", got, err)
+	}
+}
 
 func TestPRLinkedSessionsOwnerScopeAndOrder(t *testing.T) {
 	s, reg := newSessionsTestServer(t)

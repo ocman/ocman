@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	"github.com/ocman/ocman/internal/platforms"
@@ -40,7 +41,10 @@ func (s *Server) readPRLinkedSessions(ctx context.Context, owner, host, repo str
 			continue
 		}
 		if sidebar && owner != "local" {
-			links, _ := s.cachedPRSidebarLinks(string(key))
+			links, ready := s.cachedPRSidebarLinks(string(key))
+			if !ready {
+				return nil, fmt.Errorf("PR sidebar link snapshot unavailable for platform %q", key)
+			}
 			for _, link := range links {
 				if link.Remote.Host == host && link.Remote.Repo == repo {
 					result[link.Number] = append(result[link.Number], projectforge.SessionRef{Platform: string(key), SessionID: link.SessionID})
