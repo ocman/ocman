@@ -1,4 +1,55 @@
-import { test, expect, MOCK_SESSION } from './fixtures';
+import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
+
+test('loads the opening prompt without scrolling when opening a prefetched session', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 1100, height: 1900 });
+  await page.addInitScript(() => localStorage.setItem('ocman:ui', JSON.stringify({
+    state: { compactToolCalls: true, changesSidebarOpenTabs: [] }, version: 7,
+  })));
+  const offsets: number[] = [];
+  let finishOpen!: () => void;
+  const openGate = new Promise<void>(resolve => { finishOpen = resolve; });
+  const messages = Array.from({ length: 62 }, (_, position) => ({
+    id: `tool-history-${position}`, sessionId: MOCK_SESSION.id,
+    timeCreated: MOCK_SESSION.timeCreated + position * 1000,
+    data: { role: position === 0 ? 'user' : 'assistant', finish: position ? 'tool-calls' : undefined },
+  }));
+  const historyUrl = new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`);
+  await page.route(historyUrl, async (route) => {
+    const { searchParams } = new URL(route.request().url());
+    const offset = Number(searchParams.get('offset') || 0);
+    offsets.push(offset);
+    if (!searchParams.has('peek')) await openGate;
+    const end = messages.length - offset;
+    const batch = messages.slice(Math.max(0, end - 30), end);
+    return route.fulfill({ json: {
+      session: { ...MOCK_SESSION, status: 'busy', messageCount: messages.length },
+      messages: batch,
+      parts: batch.map((message) => ({
+        id: `part-${message.id}`, messageId: message.id, sessionId: MOCK_SESSION.id,
+        data: message.data.role === 'user'
+          ? { type: 'text', text: 'Opening prompt before the tool activity' }
+          : { type: 'tool', tool: 'bash', callID: message.id, state: { status: 'completed', input: { command: 'pwd' }, output: '/project' } },
+      })),
+      totalMessages: messages.length,
+    } });
+  });
+
+  await page.goto(`/session/${MOCK_SESSION_2.id}`);
+  const row = page.getByTestId('session-sidebar').getByRole('button', { name: /Fix the login bug/ });
+  const [prefetch] = await Promise.all([page.waitForResponse(historyUrl), row.focus()]);
+  await prefetch.finished();
+  await row.click();
+  const viewport = page.getByTestId('conversation-viewport');
+  try {
+    await expect(viewport.getByText(/30 tools/).first()).toBeAttached();
+    expect(await viewport.evaluate(el => el.scrollHeight - el.clientHeight)).toBe(0);
+    await viewport.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  } finally {
+    finishOpen();
+  }
+  await expect(viewport.getByText('Opening prompt before the tool activity')).toBeVisible();
+  expect(offsets.filter(offset => offset > 0)).toEqual([30, 60]);
+});
 
 for (const resize of [false, true]) {
   test(`fills the conversation viewport with older pages, resize=${resize}`, async ({ mockedPage: page }) => {

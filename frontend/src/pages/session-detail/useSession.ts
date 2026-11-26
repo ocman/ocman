@@ -48,6 +48,8 @@ export interface UseSessionResult extends SessionView {
   hydrateHistory: (messages: Message[], parts: Part[], storedIds: readonly string[]) => void;
   loading: boolean;
   loadingMore: boolean;
+  /** The first server read has established which messages count toward paging. */
+  historyReady: boolean;
   loadError: string | null;
   refreshing: boolean;
   refreshError: string | null;
@@ -137,6 +139,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
     sessionId, routedPlatform, fetchSession, reconnectDelay, pageSize, debug,
     dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, storedIdsRef, setLoadingMore, setTotalMessages,
   });
+  const { historyReady } = lifecycle;
 
   const { id: liveId, platform, status: liveStatus, notice, liveConnection } = view.session ?? {};
   useEffect(() => {
@@ -150,7 +153,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
 
   const loadMore = useCallback(async () => {
     // The ref makes two same-tick calls re-entrant-safe.
-    if (!sessionId || loadMoreInFlightRef.current) return;
+    if (!sessionId || !historyReady || loadMoreInFlightRef.current) return;
     loadMoreInFlightRef.current = true;
     setLoadingMore(true);
     // Streamed and composed messages history has not stored yet would shift
@@ -184,7 +187,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
       loadMoreInFlightRef.current = false;
       setLoadingMore(false);
     }
-  }, [sessionId, fetchSession, pageSize, routedPlatform, setTotalMessages]);
+  }, [sessionId, historyReady, fetchSession, pageSize, routedPlatform, setTotalMessages]);
 
   const hydrateHistory = useCallback((messages: Message[], parts: Part[], storedIds: readonly string[]) => {
     for (const id of storedIds) storedIdsRef.current.add(id);

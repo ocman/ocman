@@ -50,6 +50,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
   const [loading, setLoading] = useState(!cached);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(!!cached);
+  const [historyReady, setHistoryReady] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [sseReconnecting, setSseReconnecting] = useState(false);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
@@ -71,6 +72,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     storedIdsRef.current = new Set();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resets view state on session switch in the same effect that owns the SSE connection; deriving it in render would need a full lifecycle rewrite
     if (!sessionId) { setStatus('loading'); return; }
+    setHistoryReady(false);
     if (sessionId === 'new') {
       dispatch({ type: 'load', view: initialSessionView(sessionId) });
       setStatus('live');
@@ -143,6 +145,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         // The owner composes streamed content history lacks up to the cursor;
         // only later events are newer than the read.
         const cursor = readCoverage(detail, storedIdsRef.current);
+        setHistoryReady(true);
         if (mode === 'recover' || mode === 'restore') {
           loadMoreAbortRef.current?.abort();
           loadMoreInFlightRef.current = false;
@@ -303,6 +306,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, routedPlatform]);
 
-  return { status, loading, loadError, refreshing, refreshError,
+  return { status, loading, loadError, refreshing, refreshError, historyReady,
     sseReconnecting, sseNextRetryAt, sseDebugEvents, changesDirtyTick, reload, refresh, retryNow };
 }

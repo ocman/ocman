@@ -847,7 +847,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   hasMore={hasMore}
                   oldestMessageId={messages[0]?.id}
                   loadingMore={loadingMore}
-                  onLoadMore={loadMore}
+                  onLoadMore={view.historyReady ? loadMore : undefined}
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleMessageBookmark={handleToggleMessageBookmark}
                   scrollToMessageId={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.id : null}
