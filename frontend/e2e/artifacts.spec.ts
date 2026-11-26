@@ -9,7 +9,50 @@ const artifact = {
   ],
 };
 
-test('browses, previews and deletes an artifact', async ({ mockedPage: page }) => {
+test('retries artifact detail in place on the same owner at 320px', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  const requests: string[] = [];
+  const ownerPath = '/api/remote-resources/build-box/api/artifacts/art-1';
+  await page.route(ownerPath, (route) => {
+    requests.push(new URL(route.request().url()).pathname);
+    if (requests.length === 1) return route.fulfill({ status: 503, body: 'Owner temporarily unavailable' });
+    return route.fulfill({ json: { ...artifact, items: [], remoteId: 'build-box' } });
+  });
+  await page.goto('/artifacts/art-1?remoteId=build-box');
+  await expect(page.getByRole('alert')).toContainText('Owner temporarily unavailable');
+  const document = await page.evaluateHandle(() => window.document);
+  await page.getByRole('button', { name: 'Retry', exact: true }).click({ timeout: 5000 });
+  await expect(page.getByRole('heading', { name: artifact.title })).toBeVisible();
+  expect(await document.evaluate((previous) => previous === window.document)).toBe(true);
+  expect(requests).toEqual([ownerPath, ownerPath]);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Delete|Share/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Back to artifacts' }).click();
+  await expect(page).toHaveURL(/\/artifacts\?remoteId=build-box$/);
+});
+
+test('returns to the existing filtered list before browser Back at 320px', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.route(/\/api\/artifacts(?:\?.*)?$/, (route) => route.fulfill({ json: { artifacts: [artifact] } }));
+  await page.route('/api/artifacts/art-1', (route) => route.fulfill({ json: { ...artifact, items: [] } }));
+  await page.goto('/sessions');
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('link', { name: 'Artifacts', exact: true }).click();
+  const search = page.getByRole('searchbox', { name: 'Search artifacts' });
+  await search.fill('build');
+  await expect(page).toHaveURL(/\/artifacts\?q=build$/);
+  const filteredList = page.url();
+  await page.getByRole('link', { name: artifact.title }).click();
+  await expect(page.getByRole('heading', { name: artifact.title })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to artifacts' }).click();
+  await expect(page).toHaveURL(filteredList);
+  await expect(search).toHaveValue('build');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/sessions$/, { timeout: 5000 });
+});
+
+test('browses, previews and confirms artifact deletion at 320px', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
   let deleted = false;
   await page.route('/api/artifacts/stats', (route) => route.fulfill({ json: { count: 1, totalBytes: 11 } }));
   await page.route(/\/api\/artifacts(\?.*)?$/, (route) => route.fulfill({ json: { artifacts: deleted ? [] : [artifact], nextCursor: '' } }));
@@ -26,8 +69,17 @@ test('browses, previews and deletes an artifact', async ({ mockedPage: page }) =
   await expect(page.getByTestId('artifact-preview-text')).toHaveText('build ok 42');
   await expect(page.getByRole('link', { name: 'CI run' })).toHaveAttribute('href', 'https://ci.example/run/1');
 
-  page.once('dialog', (dialog) => void dialog.accept());
-  await page.getByRole('button', { name: 'Delete' }).click();
+  const remove = page.getByRole('button', { name: 'Delete', exact: true });
+  await remove.click();
+  const dialog = page.getByRole('dialog', { name: 'Delete "Build report"?' });
+  const cancel = dialog.getByRole('button', { name: 'Cancel' });
+  await expect(cancel).toBeFocused({ timeout: 5000 });
+  await expect(dialog).toContainText('revokes any live share links');
+  await cancel.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  expect(deleted).toBe(false);
+  await remove.click();
+  await dialog.getByRole('button', { name: 'Delete artifact' }).click();
   await expect(page).toHaveURL(/\/artifacts$/);
   await expect(page.getByRole('heading', { name: 'No artifacts saved yet' })).toBeVisible();
 });

@@ -13,15 +13,17 @@ export function ArtifactSessionLink({ artifact, known }: { artifact: Artifact; k
 }
 
 /** Artifact rows; reused by the /artifacts page and the session sidebar. */
-export function ArtifactList({ artifacts, compact = false, listSearch = '' }: { artifacts: Artifact[]; compact?: boolean; listSearch?: string }) {
+export function ArtifactList({ artifacts, compact = false, listSearch }: { artifacts: Artifact[]; compact?: boolean; listSearch?: string }) {
   const known = useKnownSessionIds();
+  // Only the standalone list supplies its filters (including an empty string).
+  const detailState = listSearch === undefined ? undefined : { fromArtifactsList: true };
   return (
     <DataTable framed data-testid="artifact-list">
         <thead><tr><th>Title</th>{!compact && <th>Project</th>}{!compact && <th>Session</th>}<th>Items</th><th>Size</th><th>Created</th></tr></thead>
         <tbody>
           {artifacts.map((a) => (
             <tr key={a.id} data-testid="artifact-row">
-              <td className={styles.titleCell}><Link className={styles.title} to={`/artifacts/${encodeURIComponent(a.id)}${listSearch ? `?${listSearch}` : ''}`}>{a.title}</Link></td>
+              <td className={styles.titleCell}><Link className={styles.title} to={`/artifacts/${encodeURIComponent(a.id)}${listSearch ? `?${listSearch}` : ''}`} state={detailState}>{a.title}</Link></td>
               {!compact && <td><ProjectLabel path={a.directory} /></td>}
               {!compact && <td><ArtifactSessionLink artifact={a} known={known} /></td>}
               <td>{a.items.length}</td>

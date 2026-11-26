@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { ConfirmProvider } from '../components/ConfirmDialog';
+import { Button } from '../components/Control';
 import { api } from '../lib/api';
 import { artifactsApi, previewKind, type Artifact } from '../lib/artifactsApi';
 import { ArtifactDetail } from './ArtifactDetail';
@@ -30,15 +32,17 @@ const artifact: Artifact = {
 };
 
 function ListPage() {
-  return <><p>list page</p><output data-testid="list-search">{useLocation().search}</output></>;
+  const navigate = useNavigate();
+  return <><p>list page</p><output data-testid="list-search">{useLocation().search}</output><Button onClick={() => navigate(-1)}>Go back in history</Button></>;
 }
 
-function renderPage(entry = '/artifacts/a1') {
+function renderPage(entry = '/artifacts/a1', previous?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><Routes>
+  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={previous ? [previous, entry] : [entry]}><ConfirmProvider><Routes>
     <Route path="/artifacts/:id" element={<ArtifactDetail />} />
     <Route path="/artifacts" element={<ListPage />} />
-  </Routes></MemoryRouter></QueryClientProvider>) };
+    <Route path="/session/:id" element={<p>session page</p>} />
+  </Routes></ConfirmProvider></MemoryRouter></QueryClientProvider>) };
 }
 
 describe('ArtifactDetail', () => {
@@ -110,17 +114,15 @@ describe('ArtifactDetail', () => {
     set.mockRestore();
   });
 
-  it('deletes after confirmation and returns to the list', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
-    vi.mocked(artifactsApi.remove).mockResolvedValue(undefined);
+  it('keeps the artifact visible when deletion fails', async () => {
+    vi.mocked(artifactsApi.remove).mockRejectedValueOnce(new Error('Could not revoke share link'));
     renderPage();
-    const del = await screen.findByRole('button', { name: 'Delete' });
-    await userEvent.click(del);
-    expect(artifactsApi.remove).not.toHaveBeenCalled();
-    await userEvent.click(del);
-    expect(artifactsApi.remove).toHaveBeenCalledWith('a1');
-    expect(await screen.findByText('list page')).toBeInTheDocument();
-    confirm.mockRestore();
+    const button = await screen.findByRole('button', { name: 'Delete' });
+    await userEvent.click(button);
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete artifact' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not revoke share link');
+    expect(screen.getByRole('heading', { name: 'Release notes' })).toBeInTheDocument();
+    expect(button).toBeEnabled();
   });
 
   it('navigates back to the list', async () => {
@@ -131,33 +133,43 @@ describe('ArtifactDetail', () => {
   });
 
   it.each(['back', 'delete'])('preserves list filters after %s', async (action) => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(artifactsApi.remove).mockResolvedValue(undefined);
     renderPage('/artifacts/a1?q=coverage&directory=%2Frepo');
     await screen.findByRole('heading', { name: 'Release notes' });
     await userEvent.click(screen.getByRole('button', { name: action === 'back' ? 'Back to artifacts' : 'Delete' }));
+    if (action === 'delete') await userEvent.click(await screen.findByRole('button', { name: 'Delete artifact' }));
     expect(await screen.findByTestId('list-search')).toHaveTextContent('?q=coverage&directory=%2Frepo');
-    confirm.mockRestore();
   });
 
   it('invalidates cached lists and storage totals after deletion', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(artifactsApi.remove).mockResolvedValue(undefined);
     const { client } = renderPage();
     const key = ['artifacts', '/repo', 'coverage'];
     client.setQueryData(key, { pages: [{ artifacts: [artifact], nextCursor: '' }], pageParams: [''] });
     client.setQueryData(['artifact-stats'], { count: 1, totalBytes: 10 });
     await userEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete artifact' }));
     await screen.findByText('list page');
     expect(client.getQueryState(key)?.isInvalidated).toBe(true);
     expect(client.getQueryState(['artifact-stats'])?.isInvalidated).toBe(true);
-    confirm.mockRestore();
   });
 
-  it('shows load errors', async () => {
-    vi.mocked(artifactsApi.get).mockRejectedValue(new Error('artifact not found'));
-    renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('artifact not found');
+  it('replaces detail with a scoped list when entered from a session link', async () => {
+    renderPage('/artifacts/a1?remoteId=box', '/session/s1');
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to artifacts' }));
+    expect(await screen.findByTestId('list-search')).toHaveTextContent('?remoteId=box');
+    await userEvent.click(screen.getByRole('button', { name: 'Go back in history' }));
+    expect(await screen.findByText('session page')).toBeInTheDocument();
+  });
+
+  it('recovers from a load error using the same artifact and owner', async () => {
+    vi.mocked(artifactsApi.get).mockRejectedValueOnce(new Error('artifact unavailable'));
+    renderPage('/artifacts/a1?remoteId=box');
+    expect(await screen.findByRole('alert')).toHaveTextContent('artifact unavailable');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('heading', { name: artifact.title })).toBeInTheDocument();
+    expect(artifactsApi.get).toHaveBeenCalledTimes(2);
+    expect(artifactsApi.get).toHaveBeenNthCalledWith(2, 'a1', expect.any(AbortSignal), 'box');
   });
 
   it('classifies preview kinds', () => {

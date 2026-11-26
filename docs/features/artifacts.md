@@ -87,11 +87,16 @@ time.
   delete. HTML files (`text/html`) render in a sandboxed frame with scripts
   disabled; **Run scripts** opts that one file into an interactive preview
   (see below).
+- If the artifact fails to load, **Retry** requests it again from the same
+  owner without reloading the page. **Back to artifacts** returns to the
+  previous filtered list when you opened the artifact from there. From a
+  direct link or a session, it opens the list with the owner scope in the URL.
 - The **Artifacts** tab in the session sidebar shows artifacts from this
   session and its subagents, or from the whole project. New artifacts appear
   live through the `ocman.artifact.created` event.
 
-Deleting an artifact from its page first revokes all of its live shares.
+Before deleting, the confirmation names the artifact and explains that deleting
+it revokes any live share links. The dialog starts with **Cancel** focused.
 
 ### Remote sessions
 
