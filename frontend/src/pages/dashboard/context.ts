@@ -10,6 +10,9 @@ export interface DashboardCtx {
   projects: Project[];
   sessionsLoading: boolean;
   sessionsError: string | null;
+  sessionsFetching: boolean;
+  sessionsRefreshError: boolean;
+  hasSessionsOutsideRange: boolean;
   projectsLoading: boolean;
   projectsFetching: boolean;
   /**

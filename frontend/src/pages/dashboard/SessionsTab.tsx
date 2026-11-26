@@ -1,9 +1,12 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { cleanTitle, fuzzyMatch } from '../../lib/format';
 import { usePageTitle } from '../../lib/headerContext';
 import { SessionTable } from '../../components/SessionTable';
 import { TimeRangeControl } from '../../components/TimeRangeControl';
 import { InlineAlert } from '../../components/InlineAlert';
+import { PageState } from '../../components/PageState';
+import { Button } from '../../components/Control';
 import { matchesScope } from '../../lib/projectTree';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
@@ -26,7 +29,9 @@ import { useSessionAccounting } from '../../lib/useSessionAccounting';
 
 export function SessionsTab() {
   usePageTitle('Sessions');
-  const { sessions: compactSessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
+  const { sessions: compactSessions, projects, sessionsLoading, sessionsError, sessionsFetching, sessionsRefreshError,
+    hasSessionsOutsideRange, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
+  const [, setSearchParams] = useSearchParams();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
   const [search, setSearch] = useState('');
   const { sessions, pendingKeys: activityPendingKeys, ...activityQ } = useSessionAccounting(compactSessions, { sinceHours: timeRange > 0 ? timeRange : undefined });
@@ -35,6 +40,12 @@ export function SessionsTab() {
     showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
   const [archivedPreference, setArchivedPreference] = useSessionFilterPreference('archived', SESSION_FILTER_DEFAULTS.showArchived);
   const filters = { alwaysShowPrompts, showArchived: showArchived || archivedPreference, showSnoozed, showChildren, showFactory, showRoutines, showPlugins };
+  const phoneFiltersActive = SESSION_FILTER_FIELDS.some(([key]) => filters[key] !== SESSION_FILTER_DEFAULTS[key]);
+  const preferenceSetters = {
+    alwaysShowPrompts: setAlwaysShowPrompts, showArchived: setArchivedPreference,
+    showSnoozed: setShowSnoozed, showChildren: setShowChildren, showFactory: setShowFactory,
+    showRoutines: setShowRoutines, showPlugins: setShowPlugins,
+  };
   const hidden = hiddenSessionOrigins(sessions, filters);
 
   const filterControls = <>
@@ -51,10 +62,35 @@ export function SessionsTab() {
       return phone ? matchesSessionListFilters(s, filters, hidden, searchMatches) : searchMatches;
     });
 
+  const clearFilters = () => {
+    setSearch('');
+    if (phone) {
+      for (const [key] of SESSION_FILTER_FIELDS) {
+        if (filters[key] !== SESSION_FILTER_DEFAULTS[key]) preferenceSetters[key](SESSION_FILTER_DEFAULTS[key]);
+      }
+    }
+    setSearchParams(params => {
+      params.delete('dir');
+      params.delete('a');
+      params.set('t', '0');
+      return params;
+    }, { replace: true });
+  };
+
+  const emptyState = q || dirScope || hasSessionsOutsideRange || (phone ? phoneFiltersActive : showArchived)
+    ? <PageState icon="bi-search" title="No matching sessions" description="Try changing your search or clearing your filters.">
+        <Button type="button" onClick={clearFilters}>Clear filters</Button>
+      </PageState>
+    : sessions.length === 0
+      ? <PageState icon="bi-chat-dots" title="No sessions yet" description="Choose a project to start your first session.">
+          <Button type="button" variant="accent" onClick={() => openProjectSessionPalette()}>New session</Button>
+        </PageState>
+      : <PageState icon="bi-chat-dots" title="No active sessions" description="Use the filters to include sessions hidden from this list." />;
+
   return (
     <>
-      {sessionsError && (
-        <InlineAlert onRetry={() => loadSessions()} retrying={sessionsLoading}>
+      {sessionsError && sessionsRefreshError && (
+        <InlineAlert tone="warning" onRetry={loadSessions} retrying={sessionsFetching}>
           {sessionsError}
         </InlineAlert>
       )}
@@ -65,14 +101,12 @@ export function SessionsTab() {
       )}
       {phone ? <PhoneSessionsToolbar projects={projects} dirScope={dirScope} setDirScope={setDirScope}
         search={search} setSearch={setSearch} onNewSession={() => openProjectSessionPalette()}
-        filtersActive={SESSION_FILTER_FIELDS.some(([key]) => filters[key] !== SESSION_FILTER_DEFAULTS[key])}>
+        filtersActive={phoneFiltersActive}>
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
-        <SessionFilterControls value={filters} onChange={(key, checked) => ({
-          alwaysShowPrompts: setAlwaysShowPrompts,
-          showArchived: (value: boolean) => { setArchivedPreference(value); setShowArchived(value); },
-          showSnoozed: setShowSnoozed, showChildren: setShowChildren,
-          showFactory: setShowFactory, showRoutines: setShowRoutines, showPlugins: setShowPlugins,
-        })[key](checked)} />
+        <SessionFilterControls value={filters} onChange={(key, checked) => {
+          preferenceSetters[key](checked);
+          if (key === 'showArchived') setShowArchived(checked);
+        }} />
       </PhoneSessionsToolbar> : <><DashboardToolbar
         projects={projects}
         dirScope={dirScope}
@@ -86,14 +120,16 @@ export function SessionsTab() {
         onAction={() => openProjectSessionPalette()}
       />
         {filterControls}</>}
-      <SessionTable
+      {sessionsError && !sessionsRefreshError ? <PageState error title="Could not load sessions" description={sessionsError}
+        onRetry={loadSessions} retrying={sessionsFetching} /> : <SessionTable
         sessions={filteredSessions}
         showProject
         loading={sessionsLoading && sessions.length === 0}
         includeArchived={phone ? filters.showArchived : showArchived}
         prefiltered={phone}
         activityPendingKeys={activityPendingKeys}
-      />
+        emptyState={emptyState}
+      />}
     </>
   );
 }

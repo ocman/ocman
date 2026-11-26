@@ -20,6 +20,10 @@
   display: block;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .oc-skeleton { background: var(--surface1); animation: none; }
+}
+
 /* ── Preset sizes ──────────────────────────────────────────────── */
 
 /* One-line text placeholder (default height 12 px). Pass an inline

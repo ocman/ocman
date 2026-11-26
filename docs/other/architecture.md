@@ -1533,6 +1533,7 @@ generation fences and recovery behavior.
 ```mermaid
 flowchart LR
     Tabs[Browser tabs] -->|stable relative windows + conditional GET| Snapshots[Bounded HTTP snapshots]
+    Tabs -->|Sessions: empty recent list, one all-time row| Snapshots
     Lineage[Open Lineage pane] -->|compact global page| Snapshots
     Detail[Conversation detail and stream] -->|native session tree| Lineage
     Snapshots -->|one request-owned refresh per query| Sidebar[Authoritative sidebar reader]
@@ -1550,6 +1551,9 @@ flowchart LR
   after the authoritative read starts, independently of event delivery. Refreshes
   run in the initiating request, join concurrent consumers, and never return
   stale content on error. Retention is bounded to 64 entries and 32 MiB.
+- On `/sessions`, an empty recent list triggers a compact all-time read limited
+  to one row. This distinguishes first use from an empty time window without
+  loading the full history. Failed reads offer Retry instead of onboarding.
 - ETags combine a server-local epoch and content digest. Conditional reads skip
   unchanged response bodies. Mutations and state broadcasts invalidate snapshots;
   a mutation during a read prevents that response acquiring a reusable version.

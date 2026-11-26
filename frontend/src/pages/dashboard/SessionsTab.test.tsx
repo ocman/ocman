@@ -17,8 +17,10 @@ vi.mock('./context', () => ({ useDashboard: () => dashboard() }));
 vi.mock('../../lib/useIsPhone', () => ({ useIsPhone: vi.fn() }));
 vi.mock('../../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../../components/SessionTable', () => ({
-  SessionTable: ({ sessions, loading, includeArchived }: { sessions: Session[]; loading: boolean; includeArchived: boolean }) =>
-    <section aria-label="Results" data-loading={loading} data-archived={includeArchived}>{sessions.map(s => <p key={s.id}>{s.title}</p>)}</section>,
+  SessionTable: ({ sessions, loading, includeArchived, emptyState }: { sessions: Session[]; loading: boolean; includeArchived: boolean; emptyState: React.ReactNode }) =>
+    <section aria-label="Results" data-loading={loading} data-archived={includeArchived}>
+      {sessions.length || loading ? sessions.map(s => <p key={s.id}>{s.title}</p>) : emptyState}
+    </section>,
 }));
 vi.mock('./DashboardToolbar', () => ({
   DashboardToolbar: ({ search, setSearch, onAction }: { search: string; setSearch: (s: string) => void; onAction: () => void }) =>
@@ -36,6 +38,7 @@ const sessions = [
 
 const ctx = (overrides: Partial<DashboardCtx> = {}) => ({
   sessions, projects: [], sessionsLoading: false, sessionsError: null,
+  sessionsFetching: false, sessionsRefreshError: false, hasSessionsOutsideRange: false,
   loadSessions: vi.fn(), timeRange: 24, setTimeRange: vi.fn(),
   showArchived: false, setShowArchived: vi.fn(), dirScope: '', setDirScope: vi.fn(), ...overrides,
 });
@@ -180,14 +183,23 @@ describe('session status filters', () => {
   });
 
   it('retains mobile loading, archive and retry controls', () => {
-    const { value } = mount({ sessions: [], sessionsLoading: true, sessionsError: 'Unable to load sessions' });
-    expect(screen.getByRole('region', { name: 'Results' })).toHaveAttribute('data-loading', 'true');
+    const { value } = mount({ sessions: [], sessionsFetching: true, sessionsError: 'Unable to load sessions' });
+    expect(screen.queryByRole('region', { name: 'Results' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Unable to load sessions');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Show archived' }));
     expect(value.setShowArchived).toHaveBeenCalledWith(true);
     expect(localStorage.getItem('ocman:sidebar-filter:archived')).toBe('true');
+  });
+
+  it('clears phone filters along with the search when no sessions match', () => {
+    localStorage.setItem('ocman:sidebar-filter:children', 'false');
+    mount({ sessions: [{ ...sessions[0], parentId: 'parent' }] });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'other' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('');
+    expect(screen.getByText('Running work')).toBeVisible();
   });
 
   it('retains desktop time-range controls', () => {

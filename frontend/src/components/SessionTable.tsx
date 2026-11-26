@@ -1,5 +1,6 @@
 import './SessionTable.css';
 import './PhoneTables.css';
+import type { ReactNode } from 'react';
 import type { Session } from '../lib/api';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
@@ -26,9 +27,10 @@ interface Props {
   prefiltered?: boolean;
   /** Owner-qualified `${platform}:${id}` keys whose accounting is not ready. */
   activityPendingKeys?: ReadonlySet<string>;
+  emptyState?: ReactNode;
 }
 
-export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered, activityPendingKeys }: Props) {
+export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered, activityPendingKeys, emptyState }: Props) {
   const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
   const sort = useUrlSort(SORT_KEYS);
 
@@ -42,6 +44,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived, 
     .filter(session => includeArchived || !locallyArchivedSessionIds.has(session.id));
 
   if (!visibleSessions.length) {
+    if (emptyState) return <>{archiveError && <InlineAlert>{archiveError}</InlineAlert>}{emptyState}</>;
     return (
       <DataTable className="phone-session-table">
         <tbody>

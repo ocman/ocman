@@ -40,7 +40,13 @@
   .phone-project-table > tbody > tr > td:not(:first-child, :last-child) { display: none; }
   .phone-session-table .session-row-link { min-height: 80px; padding: 17px 0; }
   .phone-session-table .session-row-link > .mono { display: none; }
-  .phone-session-table .session-title { color: var(--text); font-size: 15px; font-weight: 550; }
+  .phone-session-table .session-title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 550;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .phone-session-table .session-action-cell .session-archive-btn,
   .phone-project-table td:last-child .oc-icon-button { width: 44px; height: 44px; }
   .phone-project-table td:last-child .project-merge-btn { width: 44px; height: 44px; }

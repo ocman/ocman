@@ -23,7 +23,7 @@ test('mobile Home keeps the session list as the landing page when there are no s
   await page.route('/api/sessions*', route => route.fulfill({ json: [] }));
   await page.goto('/');
   await expect(page).toHaveURL('/sessions');
-  await expect(page.getByText('No active sessions found', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No sessions yet' })).toBeVisible();
 });
 
 test('mobile session deep links still open the requested conversation', async ({ mockedPage: page }) => {

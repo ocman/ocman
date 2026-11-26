@@ -28,6 +28,7 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
   const phone = useIsPhone();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
+  const title = cleanTitle(session.title) || 'Untitled';
   const swipe = useSessionSwipe({ disabled: archiving || snoozeOpen || snoozing,
     onArchive: event => onArchive(event, session), onSnooze: () => setSnoozeOpen(true) });
   return <tr {...swipe}
@@ -40,7 +41,7 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
           {depth > 0 && <span className="session-child-branch" style={{ '--depth': depth } as CSSProperties} aria-hidden="true">&#9492;&#9472;</span>}
           <StatusBadge status={session.status} resetsAt={session.resetsAt} compact
             seen={isTerminalStatus(session.status) && session.seen} pending={session.pendingPermission || session.pendingQuestion} />
-          <span className="session-title">{cleanTitle(session.title) || 'Untitled'}</span>
+          <span className="session-title" title={title}>{title}</span>
         </div>
         <PhoneSessionMeta session={session} activity={activityPending ? undefined
           : `${formatCount(session.messageCount, 'prompt')} \u00b7 ${formatDuration(session.durationMs)} \u00b7 ${formatCost(sessionCost(session))}`} />

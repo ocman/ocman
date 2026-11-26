@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -23,11 +23,53 @@ const row = (over: Partial<Session> = {}) => ({
 
 afterEach(() => { cleanup(); queryClient.clear(); vi.clearAllMocks(); });
 
-function renderSessions() {
-  render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/sessions']}>
+function renderSessions(url = '/sessions') {
+  render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[url]}>
     <Routes><Route element={<DashboardLayout />}><Route path="/sessions" element={<SessionsTab />} /></Route></Routes>
   </MemoryRouter></QueryClientProvider>);
 }
+
+it('distinguishes an empty recent window from first use', async () => {
+  vi.mocked(api.sessions).mockImplementation(async params => params?.sinceHours ? [] : [row()]);
+  renderSessions('/sessions?t=12');
+  const empty = await screen.findByRole('region', { name: 'No matching sessions' });
+  fireEvent.click(within(empty).getByRole('button', { name: 'Clear filters' }));
+  expect(await screen.findByRole('link', { name: /Diagnose CPU/ })).toBeInTheDocument();
+});
+
+it('retries a failed all-time check before claiming first use', async () => {
+  let fail = true;
+  vi.mocked(api.sessions).mockImplementation(async params => {
+    if (params?.limit === 1 && fail) throw new Error('HTTP 400: Session history unavailable');
+    return [];
+  });
+  renderSessions();
+  const error = await screen.findByRole('alert', { name: 'Could not load sessions' });
+  expect(error).toHaveTextContent('Session history unavailable');
+  expect(screen.queryByRole('region', { name: 'No sessions yet' })).not.toBeInTheDocument();
+  fail = false;
+  fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByRole('region', { name: 'No sessions yet' })).toBeInTheDocument();
+});
+
+it('keeps a successfully empty list on screen when a refresh fails', async () => {
+  let fail = false;
+  vi.mocked(api.sessions).mockImplementation(async () => {
+    if (fail) throw new Error('HTTP 400: Refresh failed');
+    return [];
+  });
+  renderSessions('/sessions?t=0');
+  const empty = await screen.findByRole('region', { name: 'No sessions yet' });
+  fail = true;
+  await act(async () => { await queryClient.invalidateQueries({ queryKey: ['sessions'] }); });
+  const warning = await screen.findByRole('status');
+  expect(warning).toHaveTextContent('Refresh failed');
+  expect(empty).toBeVisible();
+  fail = false;
+  fireEvent.click(within(warning).getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.queryByText(/Refresh failed/)).not.toBeInTheDocument());
+  expect(empty).toBeVisible();
+});
 
 it('fills the global list activity from accounting instead of the compact zero placeholders', async () => {
   let finish!: (rows: Session[]) => void;

@@ -11,7 +11,7 @@
  *  - Clicking a session row navigates to the session detail page
  *  - Clicking a project row navigates to the project detail page
  *  - Archive button is present on each session row
- *  - "No active sessions found" empty state when sessions list is empty
+ *  - First-use empty state when the sessions list is empty
  */
 
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2, MOCK_PROJECT } from './fixtures';
@@ -225,10 +225,7 @@ test('sessions tab shows empty state when no sessions', async ({ mockedPage: pag
     }),
   );
   await page.goto('/sessions');
-  // SessionTable shows 'No sessions found' when includeArchived=true (default), or
-  // 'No active sessions found' when includeArchived=false. Either way, the empty
-  // cell should be visible.
-  await expect(page.locator('td').filter({ hasText: /No (active )?sessions found/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No sessions yet' })).toBeVisible();
 });
 
 test('sessions tab shows loading skeleton before data arrives', async ({ mockedPage: page }) => {

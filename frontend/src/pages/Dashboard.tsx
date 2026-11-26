@@ -43,6 +43,9 @@ export function DashboardLayout() {
     { sinceHours },
     { poll: isOnDashboard },
   );
+  // An empty recent window doesn't tell us whether this is first use.
+  const checkAllTime = location.pathname === '/sessions' && sinceHours !== undefined && sessionsQ.data?.length === 0;
+  const allTimeProbe = useTQSessions({ limit: 1 }, { enabled: checkAllTime });
   const projectsQ = useTQProjects();
 
   // Module-level constants avoid creating a new [] on every render when
@@ -50,8 +53,10 @@ export function DashboardLayout() {
   const sessions = sessionsQ.data ?? EMPTY_SESSIONS;
   const projects = projectsQ.data ?? EMPTY_PROJECTS;
 
-  const sessionsError = sessionsQ.error instanceof Error ? sessionsQ.error.message : null;
-  const { isLoading: sessionsLoading, refetch: refetchSessions } = sessionsQ;
+  const stateQ = checkAllTime && !sessionsQ.isError ? allTimeProbe : sessionsQ;
+  const sessionsError = stateQ.isError
+    ? (stateQ.error instanceof Error ? stateQ.error.message : 'Try loading the session list again.')
+    : null;
   const { isLoading: projectsLoading, isFetching: projectsFetching, refetch: refetchProjectsQ } = projectsQ;
   // Surfaced so tabs can tell a failed query from a successfully empty
   // one; discarding it made every failure look like first-run.
@@ -59,15 +64,18 @@ export function DashboardLayout() {
     ? (projectsQ.error instanceof Error ? projectsQ.error.message : 'Could not load projects.')
     : null;
 
-  const loadSessions = () => { void refetchSessions(); };
+  const loadSessions = () => { void stateQ.refetch(); };
   const refetchProjects = () => { void refetchProjectsQ(); };
 
   // eslint-disable-next-line react/jsx-no-constructed-context-values -- React Compiler memoizes ctx.
   const ctx: DashboardCtx = {
     sessions,
     projects,
-    sessionsLoading,
+    sessionsLoading: stateQ.isPending,
     sessionsError,
+    sessionsFetching: stateQ.isFetching,
+    sessionsRefreshError: stateQ.isRefetchError && (!checkAllTime || allTimeProbe.data !== undefined),
+    hasSessionsOutsideRange: checkAllTime && !!allTimeProbe.data?.length,
     projectsLoading,
     projectsFetching,
     projectsError,
