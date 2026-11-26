@@ -39,7 +39,11 @@ func createFailure(err error) string {
 	if errors.As(err, &pending) {
 		return "session creation outcome is uncertain after " + stage + ": session " + pending.SessionID + " may exist. Do not create another session; check it with get, and ask the user before retrying."
 	}
-	var cause, advice string
+	cause, advice := createFailureDetails(err)
+	return "session creation failed during " + stage + ": " + cause + ". " + advice
+}
+
+func createFailureDetails(err error) (cause, advice string) {
 	switch {
 	case errors.Is(err, platforms.ErrRemoteOffline):
 		cause, advice = "the target machine is not connected", "Retry after it reconnects; ocman never falls back to another machine."
@@ -58,7 +62,7 @@ func createFailure(err error) string {
 	default:
 		cause, advice = "unexpected server error", `Retrying unchanged is unlikely to help; report this message to the user. Ocman logged the cause as "MCP session creation failed" with this stage.`
 	}
-	return "session creation failed during " + stage + ": " + cause + ". " + advice
+	return cause, advice
 }
 
 // CreateSessionRequest starts a new session and sends it one prompt.
@@ -129,6 +133,12 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 	case err != nil && created.SessionID != "":
 		// Don't hide the session: the agent can retry the prompt in the UI or inspect it.
 		message := "session " + created.SessionID + " was created on " + created.Platform + " but setup or prompt delivery failed"
+		var staged *SessionCreateStageError
+		if errors.As(err, &staged) && staged.Stage != "" {
+			message += " during " + staged.Stage
+		}
+		cause, _ := createFailureDetails(err)
+		message += ": " + cause + ". Prompt delivery is not confirmed; history may be empty. Do not create another session or automatically resend the prompt; inspect this session and ask the user before retrying."
 		if link != "" {
 			message += "\n" + link
 		}

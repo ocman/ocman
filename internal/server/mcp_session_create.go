@@ -166,7 +166,9 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		platformID = created.Platform
 	}
 	stage = "first prompt"
-	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, Model: in.Model, Agent: in.Agent, ExactModel: exactModel}); err != nil {
+	// Cold project/plugin initialization needs the same first-prompt budget as
+	// the composer; the ordinary read timeout can leave only an empty session.
+	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, FirstPrompt: true, Model: in.Model, Agent: in.Agent, ExactModel: exactModel}); err != nil {
 		return created, err
 	}
 	return created, nil
@@ -209,7 +211,10 @@ func mcpWorktreeEligible(ctx context.Context, host hostsvc.Host, dir string) (bo
 // mcpCreateError keeps the cause classifiable by the tool: validation messages
 // are safe to show; anything else carries only its stage.
 func mcpCreateError(stage string, result internalmcp.CreatedSession, err error) error {
-	if result.SessionID != "" || errors.Is(err, internalmcp.ErrInvalidSessionCreate) {
+	if result.SessionID != "" {
+		return &internalmcp.SessionCreateStageError{Stage: stage, Err: err}
+	}
+	if errors.Is(err, internalmcp.ErrInvalidSessionCreate) {
 		return err
 	}
 	var ve *sessionsvc.ValidationError

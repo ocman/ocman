@@ -100,7 +100,7 @@ func TestMCPCreateCarriesInitialSelections(t *testing.T) {
 			if worktree {
 				creation = host.request.Creation
 			}
-			if err != nil || creation == nil || creation.Model != "anthropic/opus" || creation.Agent != "plan" || sent.Message != "investigate" || sent.Model != "anthropic/opus" || !sent.ExactModel {
+			if err != nil || creation == nil || creation.Model != "anthropic/opus" || creation.Agent != "plan" || sent.Message != "investigate" || sent.Model != "anthropic/opus" || !sent.ExactModel || !sent.FirstPrompt {
 				t.Fatalf("initial selections missing: creation=%+v sent=%+v err=%v", creation, sent, err)
 			}
 		})

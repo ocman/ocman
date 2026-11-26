@@ -48,6 +48,10 @@ func TestMCPCreateLogsFailureStageWithoutPrompt(t *testing.T) {
 			if !errors.Is(err, failure) {
 				t.Fatalf("failure changed: %v", err)
 			}
+			var staged *internalmcp.SessionCreateStageError
+			if !errors.As(err, &staged) || staged.Stage != stage {
+				t.Fatalf("failure lost its stage: %v", err)
+			}
 			var entry *log.Entry
 			for _, candidate := range hook.AllEntries() {
 				if candidate.Message == "MCP session creation failed" {

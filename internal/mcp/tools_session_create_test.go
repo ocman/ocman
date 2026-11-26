@@ -74,7 +74,7 @@ func TestCreateSessionTool(t *testing.T) {
 		{err: fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate), want: "invalid session request: unknown platform"},
 		{err: platforms.ErrNotFound, want: "session not found"},
 		{err: errors.New("internal detail"), want: "session creation failed during setup: unexpected server error. Retrying unchanged is unlikely to help; report this message to the user. Ocman logged the cause as \"MCP session creation failed\" with this stage."},
-		{err: errors.New("send"), created: internalmcp.CreatedSession{Platform: "opencode", SessionID: "ses-half"}, want: "session ses-half was created on opencode but setup or prompt delivery failed\n/session/ses-half?platform=opencode"},
+		{err: errors.New("send"), created: internalmcp.CreatedSession{Platform: "opencode", SessionID: "ses-half"}, want: "session ses-half was created on opencode but setup or prompt delivery failed: unexpected server error. Prompt delivery is not confirmed; history may be empty. Do not create another session or automatically resend the prompt; inspect this session and ask the user before retrying.\n/session/ses-half?platform=opencode"},
 	} {
 		svc.err, svc.created = test.err, test.created
 		if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo", "platform": "opencode", "model": "p/m"}); !result.IsError || testutil.ResultText(result) != test.want {
@@ -192,5 +192,38 @@ func TestSessionCreateStageErrorWrapsCause(t *testing.T) {
 	err := &internalmcp.SessionCreateStageError{Stage: "worktree setup", Err: platforms.ErrBusy}
 	if err.Error() != "worktree setup: "+platforms.ErrBusy.Error() || !errors.Is(err, platforms.ErrBusy) {
 		t.Fatalf("stage error = %q", err)
+	}
+}
+
+func TestCreateSessionToolExplainsPartialFailures(t *testing.T) {
+	svc := &fakeSessionCreator{created: internalmcp.CreatedSession{Platform: "r-machine:opencode", SessionID: "ses-half"}}
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{SessionService: svc})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+	for _, test := range []struct {
+		stage string
+		err   error
+		cause string
+	}{
+		{"first prompt", context.DeadlineExceeded, "request timed out"},
+		{"first prompt", context.Canceled, "request was cancelled"},
+		{"first prompt", platforms.ErrPlatformUnauthenticated, "rejected ocman's credentials"},
+		{"creator recording", errors.New("private database detail"), "unexpected server error"},
+	} {
+		t.Run(test.stage+"/"+test.cause, func(t *testing.T) {
+			svc.err = &internalmcp.SessionCreateStageError{Stage: test.stage, Err: test.err}
+			result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "private prompt", "directory": "/repo", "platform": "opencode", "model": "p/m"})
+			text := testutil.ResultText(result)
+			if !result.IsError || strings.Contains(text, "private") {
+				t.Fatalf("partial failure leaked input or reported success: %q", text)
+			}
+			for _, want := range []string{"ses-half", "during " + test.stage, test.cause, "history may be empty", "Do not create another session", "ask the user before retrying", "/session/ses-half?platform=r-machine%3Aopencode"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("partial failure %q lacks %q", text, want)
+				}
+			}
+		})
 	}
 }
