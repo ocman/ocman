@@ -67,6 +67,48 @@ test('subscription history graphs persisted readings and keeps its period on rel
   await expect(page.getByRole('heading', { name: 'Subscription burndown', exact: true })).not.toBeVisible();
 });
 
+test('provider usage history exposes chart readings by keyboard', async ({ mockedPage: page }) => {
+  const now = Date.now();
+  const interval = 300_000;
+  const readings = [20, 30, null, 42];
+  const timestamps = readings.map((_, index) => now - (3 - index) * interval);
+  await page.route('**/api/provider-usage/history?*', route => route.fulfill({ json: {
+    sampleIntervalMs: interval,
+    samples: readings.map((value, index) => ({ sampledAt: timestamps[index], provider: {
+      id: 'codex', name: 'Codex', status: value === null ? 'upstream_error' : 'ok',
+      windows: value === null ? [] : [{ name: '5 hours', usedPercent: value }],
+    } })),
+  } }));
+  await page.goto('/provider-usage?view=history');
+  const card = page.getByRole('region', { name: 'Codex' });
+  await expect(card.getByRole('img', { name: 'Codex subscription usage history' })).toBeVisible();
+  const toggle = card.getByRole('button', { name: 'View chart data' });
+  const table = card.getByRole('table', { name: 'Codex subscription usage history data' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(table).toHaveCount(0);
+  const refresh = page.getByTestId('page-content').getByRole('button', { name: 'Refresh', exact: true });
+  await expect(refresh).toBeEnabled();
+  await refresh.focus();
+  await page.keyboard.press('Tab');
+  await expect(toggle).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(table.getByRole('columnheader')).toHaveText(['Timestamp', 'Quota window or budget', 'Used']);
+  const rows = table.getByRole('row');
+  for (const [index, value] of [...readings].reverse().entries()) {
+    const row = rows.nth(index + 1);
+    await expect(row.getByRole('time')).toHaveAttribute('datetime', new Date(timestamps[3 - index]).toISOString());
+    await expect(row.getByRole('time')).toHaveText(/\d{2}:\d{2}:\d{2}/);
+    await expect(row.getByRole('cell').last()).toHaveText(value === null ? 'No reading' : `${value}%`);
+    await expect(row.getByRole('cell', { name: '5 hours', exact: true })).toBeVisible();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => table.evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Space');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(table).toHaveCount(0);
+});
+
 test('provider usage shows the local seven-day TypeSafe estimate', async ({ mockedPage: page }) => {
   await page.route('/api/provider-usage', route => route.fulfill({ json: { providers: [{
     id: 'typesafe', name: 'TypeSafe', status: 'ok', windows: [], spend: {

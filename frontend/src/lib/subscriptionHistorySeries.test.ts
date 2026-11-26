@@ -36,7 +36,7 @@ describe('subscriptionHistorySeries', () => {
     if (reason === 'plan') next.provider.plan = 'plus';
     if (reason === 'shutdown') next.sampledAt = interval * 5;
     const points = subscriptionHistorySeries(history([first, next]))[0].series[0].data;
-    expect(points).toEqual([{ x: first.sampledAt, y: 80 }, { x: next.sampledAt - 1, y: null }, { x: next.sampledAt, y: 10 }]);
+    expect(points).toEqual([{ x: first.sampledAt, y: 80 }, { x: next.sampledAt - 1, y: null, lineBreak: true }, { x: next.sampledAt, y: 10 }]);
   });
 
   it('keeps budget IDs separate, labels their scope, and bounds quota percentages', () => {
@@ -64,7 +64,7 @@ describe('subscriptionHistorySeries', () => {
     const hour = 3_600_000;
     const samples = [1, 2, 5].map(index => ({ ...sample(index * hour, index * 10), sampleIntervalMs: hour }));
     const points = subscriptionHistorySeries(history(samples))[0].series[0].data;
-    expect(points).toEqual([{ x: hour, y: 10 }, { x: 2 * hour, y: 20 }, { x: 5 * hour - 1, y: null }, { x: 5 * hour, y: 50 }]);
+    expect(points).toEqual([{ x: hour, y: 10 }, { x: 2 * hour, y: 20 }, { x: 5 * hour - 1, y: null, lineBreak: true }, { x: 5 * hour, y: 50 }]);
   });
 
   it('handles the transition between hourly and five-minute samples', () => {

@@ -23,6 +23,11 @@
 .subscription-progress progress { display: block; }
 .subscription-progress-dot { position: absolute; top: 50%; width: 10px; height: 10px; box-sizing: border-box; border: 2px solid var(--bg-card); border-radius: 50%; background: var(--text); box-shadow: 0 0 0 1px var(--text-dim); transform: translate(-50%, -50%); }
 .subscription-history-chart { height: 300px; }
+.subscription-history-data { margin-top: 8px; }
+.subscription-history-pagination { margin-bottom: 8px; color: var(--text-dim); font-size: 12px; }
+.subscription-history-pagination [aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.subscription-history-table { overflow-wrap: anywhere; }
+.subscription-history-table tbody tr:hover { cursor: auto; }
 .subscription-limits-history { margin-bottom: 24px; }
 .subscription-limits-history .metrics-chart-body { height: auto; }
 @media (max-width: 640px) { .subscription-page-heading { align-items: stretch; flex-direction: column; } }

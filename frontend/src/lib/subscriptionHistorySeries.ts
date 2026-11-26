@@ -10,7 +10,7 @@ interface Observation {
 export interface SubscriptionHistorySeries {
   key: string;
   label: string;
-  data: { x: number; y: number | null }[];
+  data: { x: number; y: number | null; lineBreak?: true }[];
 }
 
 function observations(sample: SubscriptionUsageSample): Observation[] {
@@ -46,7 +46,8 @@ export function subscriptionHistorySeries(history: SubscriptionUsageHistory) {
         const value = observations(sample).find(item => item.key === metric.key);
         const interval = sample.sampleIntervalMs ?? history.sampleIntervalMs;
         if (previous && value && (sample.sampledAt - previous.at > Math.max(previous.interval, interval) * 2 || previous.reset !== value.reset || previous.plan !== sample.provider.plan)) {
-          data.push({ x: sample.sampledAt - 1, y: null });
+          // This point breaks the line but is not a sampled reading.
+          data.push({ x: sample.sampledAt - 1, y: null, lineBreak: true });
         }
         data.push({ x: sample.sampledAt, y: value ? Math.max(0, Math.min(100, value.percent)) : null });
         previous = value ? { at: sample.sampledAt, interval, reset: value.reset, plan: sample.provider.plan } : undefined;
