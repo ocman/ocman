@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import './LogsTab.css';
-import type { MetricsLogKind } from '../../lib/api';
 import { renderModel } from '../../lib/format';
 import { useMetricLogs } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/Tabs';
 import { InlineAlert } from '../../components/InlineAlert';
 import { LoadingState } from '../../components/LoadingState';
+import { PageState } from '../../components/PageState';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { MetricsPagination } from './shared';
@@ -17,7 +18,9 @@ const kinds = ['project', 'session', 'request'] as const;
 
 export function LogsTab() {
   const { dirScope } = useDashboard();
-  const [kind, setKind] = useState<MetricsLogKind>('project');
+  const [params, setParams] = useSearchParams();
+  const selectedLog = params.get('log');
+  const kind = kinds.find((value) => value === selectedLog) ?? 'project';
   const [agent, setAgent] = useState('');
   const [model, setModel] = useState('');
   const [days, setDays] = useState(30);
@@ -40,14 +43,22 @@ export function LogsTab() {
     projectOffset: kind === 'project' ? page * PAGE_SIZE : undefined,
   });
   const logs = logsQ.data;
+  const error = logsQ.error;
+  const retry = () => { void logsQ.refetch(); };
   const agentOptions = [{ value: '', label: 'All agents' }, ...(logs?.availableAgents ?? []).map((value) => ({ value, label: value }))];
   const modelOptions = [{ value: '', label: 'All models' }, ...(logs?.availableModels ?? []).map((value) => ({ value, label: renderModel(value), icon: <ModelLogo model={value} /> }))];
+
+  const changeLog = (value: string) => {
+    const next = new URLSearchParams(params);
+    if (value === 'project') next.delete('log');
+    else next.set('log', value);
+    setParams(next);
+  };
 
   return (
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
-      {logsQ.error instanceof Error && <InlineAlert>{logsQ.error.message}</InlineAlert>}
-      <Tabs className="chart-card" value={kind} onValueChange={(value) => setKind(value as MetricsLogKind)}>
+      <Tabs className="chart-card" value={kind} onValueChange={changeLog}>
         <div className="metrics-log-header">
           <TabsList aria-label="Log views" className="metrics-log-tabs">
             {kinds.map((value) => <TabsTrigger key={value} value={value}>{value[0].toUpperCase() + value.slice(1)} Log</TabsTrigger>)}
@@ -55,6 +66,13 @@ export function LogsTab() {
           {logs && <span className="metrics-log-range"><LogRange page={page} pageSize={PAGE_SIZE} total={logs.total} /></span>}
         </div>
         {kinds.map((value) => <TabsContent key={value} value={value}>
+          {error && (logs ? (
+            <InlineAlert tone="warning" compact onRetry={retry} retrying={logsQ.isFetching}>
+              Could not refresh logs. Showing the last loaded results. {error.message}
+            </InlineAlert>
+          ) : (
+            <PageState error compact title="Logs unavailable" description={error.message} onRetry={retry} retrying={logsQ.isFetching} />
+          ))}
           {logsQ.isLoading && !logs && <LoadingState>Loading logs...</LoadingState>}
           {logs && value === 'project' && <ProjectLogTable projects={logs.projects ?? []} pageOffset={page * PAGE_SIZE} />}
           {logs && value === 'session' && <SessionLogTable sessions={logs.sessions ?? []} pageOffset={page * PAGE_SIZE} />}

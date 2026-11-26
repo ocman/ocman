@@ -62,8 +62,8 @@ const metrics = {
   agents: [{ agent: 'build', requests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, inputTokens: 10, outputTokens: 5, totalTokens: 15, totalDurationMs: 1000, agentDurationMs: 1000, toolDurationMs: 0, unknownDurationMs: 0, effectiveCost: 0.1 }],
 };
 
-function renderTab(component: React.ReactNode) {
-  return render(<MemoryRouter>{component}</MemoryRouter>);
+function renderTab(component: React.ReactNode, path = '/') {
+  return render(<MemoryRouter initialEntries={[path]}>{component}</MemoryRouter>);
 }
 
 describe('analytics sections', () => {
@@ -413,6 +413,17 @@ describe('analytics sections', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Request Log' }), { key: 'Enter' });
     expect(useMetricLogs).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'request', limit: 20 }));
     expect(screen.getByRole('table')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Project Log' }), { key: 'Enter' });
+    expect(useMetricLogs).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'project', projectLimit: 20 }));
+  });
+
+  it.each([
+    ['request', 'Request Log'],
+    ['session', 'Session Log'],
+    ['invalid', 'Project Log'],
+  ])('restores the log view from ?log=%s', (kind, tabName) => {
+    renderTab(<LogsTab />, `/analytics/logs?log=${kind}`);
+    expect(screen.getByRole('tab', { name: tabName, selected: true })).toBeInTheDocument();
   });
 
   it('announces only the active log loader and retains stale tables during a failed refresh', () => {
@@ -423,20 +434,39 @@ describe('analytics sections', () => {
     expect(screen.getByRole('status').firstElementChild).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
 
-    useMetricLogs.mockReturnValue({
+    const refetch = vi.fn();
+    const failedRefresh = {
       data: { kind: 'project', total: 0, availableAgents: [], availableModels: [], projects: [] },
-      isLoading: true,
+      isLoading: false,
       error: new Error('Refresh failed'),
-    });
+      refetch,
+    };
+    useMetricLogs.mockReturnValue({ ...failedRefresh, isFetching: false });
     rerender(<MemoryRouter><LogsTab /></MemoryRouter>);
     expect(screen.queryByText('Loading logs...')).not.toBeInTheDocument();
     expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
+    expect(screen.getByText('No projects matched the current filters')).toBeInTheDocument();
+    const warning = screen.getByRole('status');
+    expect(warning).toHaveTextContent('Refresh failed');
+    const retry = within(warning).getByRole('button', { name: 'Retry' });
+    fireEvent.click(retry);
+    expect(refetch).toHaveBeenCalledTimes(1);
 
-    useMetricLogs.mockReturnValue({ data: undefined, isLoading: false, error: new Error('Logs failed') });
+    useMetricLogs.mockReturnValue({ ...failedRefresh, isFetching: true });
     rerender(<MemoryRouter><LogsTab /></MemoryRouter>);
+    expect(retry).toBeDisabled();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+  });
+
+  it('offers Retry after an initial log failure without showing empty results', () => {
+    const refetch = vi.fn();
+    useMetricLogs.mockReturnValue({ data: undefined, isLoading: false, error: new Error('Logs failed'), refetch });
+    renderTab(<LogsTab />);
     expect(screen.queryByText('Loading logs...')).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Logs failed');
+    const error = screen.getByRole('alert');
+    expect(error).toHaveTextContent('Logs failed');
+    fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });
