@@ -10,6 +10,9 @@ import (
 // MaxSSEFrameBytes bounds one buffered SSE frame.
 const MaxSSEFrameBytes = 4 << 20
 
+// SSESnapshotComment distinguishes initial state frames from live events.
+const SSESnapshotComment = ": ocman.snapshot"
+
 // SSEFrameWriter forwards only complete SSE frames to Dst, so other writers
 // sharing Dst (synthetic events, keepalives) never land inside a frame.
 type SSEFrameWriter struct {

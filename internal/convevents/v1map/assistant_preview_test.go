@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestAssistantPreviewIgnoresFollowupBootstrap(t *testing.T) {
+	p := AssistantPreview{SessionID: "s", PreviousMessageID: "old", MaxBytes: 64}
+	for _, data := range []string{
+		`{"type":"message.updated","properties":{"info":{"id":"previous-prompt","role":"user","sessionID":"s"}}}`,
+		`{"type":"message.updated","properties":{"info":{"id":"old","role":"assistant","sessionID":"s"}}}`,
+		`{"type":"session.idle","properties":{"sessionID":"s"}}`,
+	} {
+		if id, text, done := p.Apply(ParseFrame([]byte(": ocman.snapshot\ndata: " + data + "\n\n"))); id != "" || text != "" || done {
+			t.Fatalf("bootstrap reached preview: %q %q done=%v", id, text, done)
+		}
+	}
+	p.Apply(Frame{Data: json.RawMessage(`{"type":"message.updated","properties":{"info":{"id":"new-prompt","role":"user","sessionID":"s"}}}`)})
+	id, text, done := p.Apply(Frame{Data: json.RawMessage(`{"type":"message.updated","properties":{"info":{"id":"new","role":"assistant","sessionID":"s"},"parts":[{"id":"p","type":"text","text":"new answer"}]}}`)})
+	if id != "new" || text != "new answer" || done {
+		t.Fatalf("new turn did not stream: %q %q done=%v", id, text, done)
+	}
+}
+
 func TestAssistantPreviewRequiresLiveVisibleAnchors(t *testing.T) {
 	p := AssistantPreview{SessionID: "s", PreviousMessageID: "old", MaxBytes: 5}
 	for _, tc := range []struct {

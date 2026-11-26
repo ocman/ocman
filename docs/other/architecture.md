@@ -2300,8 +2300,8 @@ sequenceDiagram
   Consumers must durably deduplicate the stable operation ID.
 - `internal/pluginsmod/session_partial.go` watches the owned session's event
   stream for runs and follow-ups that negotiate session 1.8 and request `stream`.
-  It keeps only the
-  latest text snapshot, rechecks grants before dispatch, and does not write
+  It ignores initial state frames, keeps only the latest text snapshot,
+  rechecks grants before dispatch, and does not write
   to the outbox. The final assistant message's receipt key supplies the
   matching turn ID on durable delivery.
 - Observed tokens and cost are stored with the completion in the same outbox

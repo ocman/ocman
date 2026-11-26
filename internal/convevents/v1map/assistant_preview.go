@@ -19,8 +19,11 @@ type AssistantPreview struct {
 type previewPart struct{ id, text string }
 
 // Apply reports a changed snapshot, or the end of the observed turn. It never
-// uses acknowledged history to seed a new preview.
+// uses initial snapshots or acknowledged history to seed a new preview.
 func (p *AssistantPreview) Apply(f Frame) (message, text string, done bool) {
+	if f.Snapshot {
+		return "", "", false
+	}
 	typ, props, top := normalize(f)
 	if string(top["acknowledged"]) == "true" {
 		return "", "", false

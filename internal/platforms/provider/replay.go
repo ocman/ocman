@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
@@ -82,7 +83,7 @@ func (a *Adapter) proxySnapshot(ctx context.Context, id string, w io.Writer, flu
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\ndata: %s\n\n", httpx.SSESnapshotComment, data); err != nil {
 			return err
 		}
 		if flush != nil {

@@ -141,6 +141,9 @@ func TestSnapshotLeaseClosesAcknowledgedTurnGap(t *testing.T) {
 		select {
 		case frame := <-w.events:
 			found = strings.Contains(frame, `"text":"oldnew"`)
+			if found && !strings.HasPrefix(frame, ": ocman.snapshot\n") {
+				t.Fatal("initial snapshot not distinguished from live events")
+			}
 		case <-ctx.Done():
 			t.Fatal("snapshot failed to repair REST gap")
 		}
@@ -150,6 +153,9 @@ func TestSnapshotLeaseClosesAcknowledgedTurnGap(t *testing.T) {
 		select {
 		case frame := <-w.events:
 			if strings.Contains(frame, `"delta":"later"`) {
+				if !strings.HasPrefix(frame, "id: ") {
+					t.Fatal("post-snapshot delta not marked live")
+				}
 				cancel()
 				<-done
 				return

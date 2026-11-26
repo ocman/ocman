@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // Frame is one SSE frame of a v1-shaped session stream.
@@ -11,17 +13,22 @@ type Frame struct {
 	// Event is the SSE event name; "" and "message" mean the default channel.
 	Event string `json:"event,omitempty"`
 	// ID is the SSE id (the provider supervisor sequence for Claude).
-	ID   string          `json:"id,omitempty"`
-	Data json.RawMessage `json:"data"`
+	ID       string          `json:"id,omitempty"`
+	Data     json.RawMessage `json:"data"`
+	Snapshot bool            `json:"snapshot,omitempty"`
 }
 
 // ParseFrame reads one SSE frame (without its blank-line terminator).
-// Multi-line data is joined with newlines; comments are skipped.
+// Multi-line data is joined with newlines; only the snapshot comment is read.
 func ParseFrame(block []byte) Frame {
 	var f Frame
 	var data []string
 	for _, line := range strings.Split(string(block), "\n") {
 		line = strings.TrimSuffix(line, "\r")
+		if line == httpx.SSESnapshotComment {
+			f.Snapshot = true
+			continue
+		}
 		name, value, _ := strings.Cut(line, ":")
 		value = strings.TrimPrefix(value, " ")
 		switch name {
