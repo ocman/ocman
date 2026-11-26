@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { SessionPermissions, SessionPermissionsDialog } from './SessionPermissions';
 import { sessionPermissionPolicy, type SessionPermissionPolicy } from '../../lib/sessionPermissionPolicy';
+import { ConfirmProvider } from '../ConfirmDialog';
 
 vi.mock('../../lib/sessionPermissionPolicy', () => ({ sessionPermissionPolicy: { get: vi.fn(), save: vi.fn() } }));
 
@@ -20,7 +21,7 @@ beforeEach(() => {
 
 it('opens from the command and saves an editable wildcard rule for the current owner', async () => {
   const user = userEvent.setup();
-  render(<SessionPermissions sessionId="s1" platform="r-box:agent" />);
+  render(<SessionPermissions sessionId="s1" platform="r-box:agent" />, { wrapper: ConfirmProvider });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   act(() => window.dispatchEvent(new Event('oc-session-permissions-open')));
   await screen.findByText('tea do something');
@@ -37,14 +38,16 @@ it('opens from the command and saves an editable wildcard rule for the current o
 
 it('supports ask/deny, ordering, manual rules, validation and removal', async () => {
   const user = userEvent.setup();
-  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={vi.fn()} />);
+  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={vi.fn()} />, { wrapper: ConfirmProvider });
   await screen.findByText('tea do something');
   await user.click(screen.getByRole('button', { name: 'ask tea do something' }));
   await user.click(screen.getByRole('button', { name: 'deny tea do something' }));
   await user.click(screen.getByRole('button', { name: 'Move rule 2 up' }));
   expect(screen.getByLabelText('Rule 1 action')).toHaveValue('deny');
-  await user.click(screen.getByRole('button', { name: 'Move rule 1 down' }));
+  expect(screen.getByRole('button', { name: 'Move rule 1 down' })).toHaveFocus();
+  await user.keyboard('{Enter}');
   expect(screen.getByLabelText('Rule 1 action')).toHaveValue('ask');
+  expect(screen.getByRole('button', { name: 'Move rule 2 up' })).toHaveFocus();
   await user.click(screen.getByRole('button', { name: 'Add rule' }));
   await user.clear(screen.getByLabelText('Rule 3 permission'));
   expect(screen.getByRole('button', { name: 'Save session rules' })).toBeDisabled();
@@ -58,7 +61,7 @@ it('shows load errors, retries, searches and retains edits after a failed save',
   const user = userEvent.setup();
   vi.mocked(sessionPermissionPolicy.get).mockRejectedValueOnce(new Error('Owner is disconnected'));
   vi.mocked(sessionPermissionPolicy.save).mockRejectedValueOnce(new Error('Could not save'));
-  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={vi.fn()} />);
+  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={vi.fn()} />, { wrapper: ConfirmProvider });
   expect(await screen.findByRole('alert')).toHaveTextContent('Owner is disconnected');
   await user.click(screen.getByRole('button', { name: 'Retry loading permissions' }));
   await screen.findByText('tea do something');
@@ -77,15 +80,22 @@ it('escapes literal wildcard characters in recorded requests and confirms unsave
   const onClose = vi.fn();
   vi.mocked(sessionPermissionPolicy.get).mockResolvedValue({ ...policy, requests: [{ ...policy.requests[0], sessionId: 'child', patterns: ['cat *'] }] });
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={onClose} />);
+  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={onClose} />, { wrapper: ConfirmProvider });
   await screen.findByText('cat *');
   expect(screen.getByText(/Subagent/)).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'allow cat *' }));
   expect(screen.getByLabelText('Rule 1 pattern')).toHaveValue('cat \\*');
-  await user.click(screen.getByRole('button', { name: 'Close' }));
+  const close = screen.getByRole('button', { name: 'Close' });
+  await user.click(close);
+  expect(confirm).not.toHaveBeenCalled();
+  const cancel = screen.getByRole('button', { name: 'Cancel' });
+  expect(cancel).toHaveFocus();
+  await user.click(cancel);
+  expect(close).toHaveFocus();
+  expect(screen.getByLabelText('Rule 1 pattern')).toHaveValue('cat \\*');
   expect(onClose).not.toHaveBeenCalled();
-  confirm.mockReturnValue(true);
-  await user.click(screen.getByRole('button', { name: 'Close' }));
+  await user.click(close);
+  await user.click(screen.getByRole('button', { name: 'Discard changes' }));
   expect(onClose).toHaveBeenCalledOnce();
   confirm.mockRestore();
 });
@@ -93,7 +103,7 @@ it('escapes literal wildcard characters in recorded requests and confirms unsave
 it('ignores a fetch that resolves after switching sessions', async () => {
   let resolveOld!: (value: SessionPermissionPolicy) => void;
   vi.mocked(sessionPermissionPolicy.get).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
-  const { rerender } = render(<SessionPermissionsDialog sessionId="old" platform="agent" onClose={vi.fn()} />);
+  const { rerender } = render(<SessionPermissionsDialog sessionId="old" platform="agent" onClose={vi.fn()} />, { wrapper: ConfirmProvider });
   rerender(<SessionPermissionsDialog sessionId="new" platform="agent" onClose={vi.fn()} />);
   await screen.findByText('tea do something');
   await act(async () => resolveOld({ rules: [{ permission: '*', pattern: '*', action: 'deny' }], requests: [] }));
@@ -103,7 +113,7 @@ it('ignores a fetch that resolves after switching sessions', async () => {
 it('locks editing during refresh and closes cleanly when nothing changed', async () => {
   const user = userEvent.setup();
   const onClose = vi.fn();
-  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={onClose} />);
+  render(<SessionPermissionsDialog sessionId="s1" platform="agent" onClose={onClose} />, { wrapper: ConfirmProvider });
   await screen.findByText('tea do something');
   let finish!: (value: SessionPermissionPolicy) => void;
   vi.mocked(sessionPermissionPolicy.get).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));

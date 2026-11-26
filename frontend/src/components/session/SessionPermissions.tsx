@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { PermissionRule } from '../../lib/api.types';
 import { sessionPermissionPolicy, type SessionPermissionPolicy } from '../../lib/sessionPermissionPolicy';
+import { useConfirm } from '../../lib/useConfirm';
 import { Button, ButtonGroup, SearchField } from '../Control';
 import { Modal } from '../Modal';
 import { ModalHeader } from '../ModalHeader';
@@ -19,6 +20,7 @@ export function SessionPermissions({ sessionId, platform }: { sessionId: string;
 }
 
 export function SessionPermissionsDialog({ sessionId, platform, onClose }: { sessionId: string; platform: string; onClose: () => void }) {
+  const confirm = useConfirm();
   const [policy, setPolicy] = useState<SessionPermissionPolicy | null>(null);
   const [rules, setRules] = useState<PermissionRule[]>([]);
   const [search, setSearch] = useState('');
@@ -40,7 +42,13 @@ export function SessionPermissionsDialog({ sessionId, platform, onClose }: { ses
   const refresh = () => { setLoading(true); setError(''); setReload((value) => value + 1); };
   const valid = rules.every((rule) => rule.permission.trim() && rule.pattern.trim());
   const close = () => {
-    if (!dirty || window.confirm('Discard unsaved session permission rules?')) onClose();
+    if (!dirty) { onClose(); return; }
+    void confirm({
+      title: 'Discard unsaved session permission rules?',
+      description: 'Any edits since your last save will be lost.',
+      confirmLabel: 'Discard changes',
+      destructive: true,
+    }).then((discard) => { if (discard) onClose(); });
   };
   const save = async () => {
     setSaving(true);

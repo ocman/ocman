@@ -20,6 +20,7 @@ vi.mock('../../../lib/draftStartClaims', () => ({ readDraftStart: async () => un
 import { useEffect } from 'react';
 import { render, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ConfirmProvider } from '../../../components/ConfirmDialog';
 import { MemoryRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import type {
   Session,
@@ -552,6 +553,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
+    { wrapper: ConfirmProvider },
   );
 
   return {

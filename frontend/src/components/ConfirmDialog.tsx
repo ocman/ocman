@@ -28,8 +28,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     {pending && createPortal(<Modal label={pending.title} onClose={() => pending.settle(false)}>
       <ModalHeader title={pending.title} description={pending.description} onClose={() => pending.settle(false)} closeLabel="Close" />
       <ModalFooter label="Confirmation actions">
-        <Button autoFocus={pending.destructive} onClick={() => pending.settle(false)}>{pending.cancelLabel ?? 'Cancel'}</Button>
-        <Button autoFocus={!pending.destructive} variant={pending.destructive ? 'danger' : 'accent'} onClick={() => pending.settle(true)}>{pending.confirmLabel}</Button>
+        <Button data-autofocus={pending.destructive ? '' : undefined} onClick={() => pending.settle(false)}>{pending.cancelLabel ?? 'Cancel'}</Button>
+        <Button data-autofocus={!pending.destructive ? '' : undefined} variant={pending.destructive ? 'danger' : 'accent'} onClick={() => pending.settle(true)}>{pending.confirmLabel}</Button>
       </ModalFooter>
     </Modal>, document.body)}
   </ConfirmContext.Provider>;

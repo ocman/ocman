@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import type { PermissionRule } from '../lib/api.types';
 import { PERMISSION_MODES, classifyPermissionMode } from '../lib/permissionModes';
 import { ButtonGroup, SelectField, TextField } from './Control';
@@ -25,6 +26,31 @@ interface Props {
 
 export function PermissionRulesEditor({ rules, onChange, disabled, presets = true, reorderable = false, emptyMessage = 'No rules — the session uses platform defaults.' }: Props) {
   const modeId = classifyPermissionMode(rules);
+  const arrows = useRef({ up: new Map<number, HTMLButtonElement>(), down: new Map<number, HTMLButtonElement>() });
+  const moveFocus = useRef<{ rules: PermissionRule[]; index: number; direction: 'up' | 'down' } | null>(null);
+
+  useLayoutEffect(() => {
+    const target = moveFocus.current;
+    moveFocus.current = null;
+    if (!target || target.rules !== rules) return;
+    const button = arrows.current[target.direction].get(target.index);
+    if (button && !button.disabled) button.focus();
+  }, [rules]);
+
+  const moveRule = (index: number, step: -1 | 1) => {
+    const destination = index + step;
+    const next = [...rules];
+    [next[index], next[destination]] = [next[destination], next[index]];
+    // Keep moving in the same direction, or use the opposite arrow at an end.
+    const direction = step < 0 ? (destination === 0 ? 'down' : 'up') : (destination === next.length - 1 ? 'up' : 'down');
+    moveFocus.current = { rules: next, index: destination, direction };
+    onChange(next);
+  };
+
+  const registerArrow = (direction: 'up' | 'down', index: number, button: HTMLButtonElement | null) => {
+    if (button) arrows.current[direction].set(index, button);
+    else arrows.current[direction].delete(index);
+  };
 
   const setRule = (i: number, patch: Partial<PermissionRule>) => {
     const next = rules.map((r, j) => (j === i ? { ...r, ...patch } : r));
@@ -135,16 +161,8 @@ export function PermissionRulesEditor({ rules, onChange, disabled, presets = tru
 
                 {err && <p className="perm-rules-row-error" role="alert">{err}</p>}
                 {reorderable && <ButtonGroup className="perm-rules-order" label={`Move rule ${i + 1}`}>
-                  <IconButton icon="bi-arrow-up" variant="ghost" disabled={disabled || i === 0} label={`Move rule ${i + 1} up`} onClick={() => {
-                    const next = [...rules];
-                    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                    onChange(next);
-                  }} />
-                  <IconButton icon="bi-arrow-down" variant="ghost" disabled={disabled || i === rules.length - 1} label={`Move rule ${i + 1} down`} onClick={() => {
-                    const next = [...rules];
-                    [next[i], next[i + 1]] = [next[i + 1], next[i]];
-                    onChange(next);
-                  }} />
+                  <IconButton ref={(button) => registerArrow('up', i, button)} icon="bi-arrow-up" variant="ghost" disabled={disabled || i === 0} label={`Move rule ${i + 1} up`} onClick={() => moveRule(i, -1)} />
+                  <IconButton ref={(button) => registerArrow('down', i, button)} icon="bi-arrow-down" variant="ghost" disabled={disabled || i === rules.length - 1} label={`Move rule ${i + 1} down`} onClick={() => moveRule(i, 1)} />
                 </ButtonGroup>}
               </div>
             );
