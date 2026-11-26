@@ -1,5 +1,5 @@
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { startTransition, useDeferredValue, useEffect, useOptimistic, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams, type NavigateOptions } from 'react-router-dom';
 import { Button, RouteButton, SearchField } from '../components/Control';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
@@ -55,8 +55,11 @@ function InboxPermissionActions({ permission }: { permission: NonNullable<InboxI
 }
 
 /** List message when nothing is visible. A first-use inbox explains what arrives there; phones show only this pane. */
-function InboxEmpty({ filtered, archived }: { filtered: boolean; archived: boolean }) {
-  if (filtered) return <EmptyState>No messages match these filters.</EmptyState>;
+function InboxEmpty({ filtered, archived, onClearFilters }: { filtered: boolean; archived: boolean; onClearFilters: () => void }) {
+  if (filtered) return <EmptyState>
+    <p>No messages match these filters.</p>
+    <Button type="button" size="small" onClick={onClearFilters}>Clear filters</Button>
+  </EmptyState>;
   if (archived) return <EmptyState>No archived messages.</EmptyState>;
   return <div className="inbox-first-use">
     <EmptyState>Your inbox is empty.</EmptyState>
@@ -74,14 +77,21 @@ function ReaderPlaceholder({ empty }: { empty: boolean }) {
 
 export function Inbox() {
   const factory = useBetaFeatures((s) => s.factory);
+  const navigate = useNavigate();
+  const fromInboxList = useLocation().state?.fromInboxList === true;
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = filters.find(({ id }) => id === searchParams.get('status'))?.id ?? 'all';
   const activeKey = searchParams.get('item');
-  const setActiveKey = (key: string | null, replace = false) => {
+  const setActiveKey = (key: string | null, options?: NavigateOptions) => {
     setSearchParams((params) => {
       if (key) params.set('item', key); else params.delete('item');
       return params;
-    }, { replace });
+    }, options);
+  };
+  const backToMessages = () => {
+    // Only go back when the reader was pushed on top of the Inbox list.
+    if (fromInboxList) navigate(-1);
+    else setActiveKey(null, { replace: true });
   };
   const archived = filter === 'archived';
   const inbox = useInbox(archived);
@@ -92,7 +102,8 @@ export function Inbox() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const activeKeyRef = useRef(activeKey);
   useEffect(() => { activeKeyRef.current = activeKey; }, [activeKey]);
-  const [search, setSearch] = useState('');
+  // Keep keystrokes synchronous while the router commits the new URL.
+  const [search, updateSearch] = useOptimistic(searchParams.get('q') ?? '');
   const query = useDeferredValue(search.trim());
   const actions = useRef<HTMLDetailsElement>(null);
   // Safari doesn't focus a clicked button, so blur carries no relatedTarget;
@@ -100,6 +111,7 @@ export function Inbox() {
   useClickOutside(actions, true, () => actions.current?.removeAttribute('open'));
   const requestedCategory = searchParams.get('category') ?? 'all';
   const activeCategory = !factory && requestedCategory === 'factory' ? 'all' : requestedCategory;
+  const filtered = filter === 'unread' || activeCategory !== 'all' || !!query;
   const items = inbox.data?.items ?? [];
   const activeItem = items.find((item) => itemKey(item) === activeKey);
   const activeSession = activeItem?.session ?? (activeItem?.permission ? { ...activeItem.permission, title: '' } : undefined);
@@ -110,9 +122,12 @@ export function Inbox() {
   const selectedItems = visibleItems.filter((item) => !item.archivedAt && selected.has(itemKey(item)));
   const readItems = archived ? [] : visibleItems.filter((item) => item.readAt);
   const open = (item: InboxItem) => {
-    setActiveKey(itemKey(item));
     // Clicking the open row again retries a failed read mutation.
-    if (activeKey === itemKey(item) && !item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
+    if (activeKey === itemKey(item)) {
+      if (!item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
+      return;
+    }
+    setActiveKey(itemKey(item), !activeKey ? { state: { fromInboxList: true } } : undefined);
   };
   const archiveItem = (item: InboxItem) => {
     const key = itemKey(item);
@@ -122,7 +137,9 @@ export function Inbox() {
       ?? items.slice(0, index).reverse().find((candidate) => visibleKeys.has(itemKey(candidate)));
     archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => {
       if (activeKeyRef.current !== key) return;
-      if (next) open(next); else setActiveKey(null);
+      // Advancing the reader must not insert another entry between it and the list.
+      if (next) setActiveKey(itemKey(next), fromInboxList ? { replace: true, state: { fromInboxList } } : undefined);
+      else setActiveKey(null);
     } });
   };
   const toggle = (item: InboxItem) => setSelected((current) => {
@@ -145,6 +162,23 @@ export function Inbox() {
   const setFilter = (id: typeof filters[number]['id']) => {
     setSearchParams((params) => { params.set('status', id); params.delete('item'); return params; }, { replace: true });
   };
+  const setSearch = (value: string) => {
+    startTransition(() => {
+      updateSearch(value);
+      setSearchParams((params) => {
+        if (value) params.set('q', value); else params.delete('q');
+        params.delete('item');
+        return params;
+      }, { replace: true });
+    });
+  };
+  const clearFilters = () => {
+    setSearchParams((params) => {
+      for (const key of ['q', 'status', 'category', 'item']) params.delete(key);
+      return params;
+    }, { replace: true });
+    setSelected(new Set());
+  };
 
   // Open the first message once, when the inbox first loads, so the reader
   // isn't empty on arrival. Only then: closing or filtering a message is a
@@ -164,7 +198,7 @@ export function Inbox() {
     }
     if (autoSelected.current || !firstItem || window.innerWidth <= 700) return;
     autoSelected.current = true;
-    setActiveKey(itemKey(firstItem), true);
+    setActiveKey(itemKey(firstItem), { replace: true });
     // Default selection happens only once; URL changes handle later navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstItem && itemKey(firstItem), activeKey, activeItem && itemKey(activeItem)]);
@@ -188,12 +222,18 @@ export function Inbox() {
       <section className="inbox-mailbox" aria-label="Inbox messages">
         <div className="inbox-filters">
           <div className="inbox-filter-row">
-            <SearchField aria-label="Search inbox" placeholder="Search inbox…" value={search} onChange={(event) => { setSearch(event.target.value); setActiveKey(null); }} />
+            <SearchField aria-label="Search inbox" placeholder="Search inbox…" value={search} onChange={(event) => setSearch(event.target.value)} />
             <SegmentedControl label="Message status" compact options={filters.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={filter} onChange={(id) => { setFilter(id); setSelected(new Set()); }} />
           </div>
           <div className="inbox-filter-row">
             <SegmentedControl label="Message type" compact options={categories.filter(({ id }) => factory || id !== 'factory').map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />
-            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => {
+              const menu = event.currentTarget;
+              if (event.key !== 'Escape' || !menu.open) return;
+              event.preventDefault();
+              menu.open = false;
+              menu.querySelector('summary')?.focus();
+            }} onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
               <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
               <div className="inbox-action-menu-items">
                 <Button type="button" size="small" disabled={!selectedItems.length || archive.isPending} onClick={archiveSelected}><i className="bi bi-archive" aria-hidden="true" />Archive selected{selectedItems.length > 0 && ` (${selectedItems.length})`}</Button>
@@ -205,7 +245,7 @@ export function Inbox() {
         <div className="inbox-list">
           {inbox.isLoading && <LoadingState>Loading inbox…</LoadingState>}
           {inbox.isError && <InlineAlert onRetry={() => { void inbox.refetch(); }} retrying={inbox.isFetching}>Could not load inbox.</InlineAlert>}
-          {inbox.isSuccess && !visibleItems.length && <InboxEmpty filtered={items.length > 0} archived={archived} />}
+          {inbox.isSuccess && !visibleItems.length && <InboxEmpty filtered={filtered} archived={archived} onClearFilters={clearFilters} />}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
             {/* The category icon doubles as the selection checkbox: clicking it
                 swaps in a check mark, so no separate checkbox column is needed. */}
@@ -237,7 +277,7 @@ export function Inbox() {
       <section className="inbox-reader" aria-label="Message body">
         {activeItem ? <>
           <div className="inbox-reader-toolbar">
-            <Button type="button" size="small" className="inbox-back" onClick={() => setActiveKey(null)}><i className="bi bi-arrow-left" aria-hidden="true" />Back to messages</Button>
+            <Button type="button" size="small" className="inbox-back" onClick={backToMessages}><i className="bi bi-arrow-left" aria-hidden="true" />Back to messages</Button>
             <span className="inbox-meta">From {sourceLabel(activeItem.remoteId)}</span>
             <div className="inbox-actions">
              <Button type="button" size="small" disabled={archived || !activeItem.readAt || markRead.isPending || markUnread.isPending} onClick={() => markUnread.mutate({ id: activeItem.id, remoteId: activeItem.remoteId }, { onSuccess: () => setActiveKey(null) })}><i className="bi bi-envelope" aria-hidden="true" />Mark unread</Button>

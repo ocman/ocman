@@ -458,6 +458,20 @@ describe('Inbox', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('does not show filtered empty results on an Inbox error, but offers to clear filters after retry succeeds', async () => {
+    vi.mocked(api.inbox).mockRejectedValue(new Error('offline'));
+    renderInbox('/inbox?status=unread&category=general&q=Build&owner=laptop');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load inbox.');
+    expect(screen.queryByText('No messages match these filters.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+
+    vi.mocked(api.inbox).mockResolvedValue({ items: [], unreadTotal: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByLabelText('Current URL')).toHaveTextContent(/^\/inbox\?owner=laptop$/);
+    expect(screen.getByText('Your inbox is empty.')).toBeInTheDocument();
+  });
+
   it.each(['reader', 'keyboard'])('reports read and archive failures while keeping the message open through %s', async (action) => {
     vi.mocked(api.markInboxItemRead).mockRejectedValue(new Error('offline'));
     vi.mocked(api.archiveInboxItems).mockRejectedValue(new Error('offline'));

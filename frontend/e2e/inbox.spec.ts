@@ -1,5 +1,94 @@
 import { test, expect } from './fixtures';
 
+test.describe('Inbox at phone width', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  const messages = [
+    { id: 'build', remoteId: 'local', title: 'Build finished', body: 'Ready for review.', createdAt: 2, readAt: 2, category: 'general' },
+    { id: 'routine', remoteId: 'local', title: 'Routine finished', body: 'Scheduled report.', createdAt: 1, readAt: 1, category: 'routine' },
+  ];
+
+  test.beforeEach(async ({ mockedPage: page }) => {
+    await page.route('**/api/inbox**', (route) => route.fulfill({ json: { items: messages, unreadTotal: 0 } }));
+  });
+
+  test('replaces Inbox search in the URL and restores it on reload', async ({ mockedPage: page }) => {
+    await page.goto('/inbox?status=all&owner=laptop&tag=a&tag=b');
+    await expect(page.getByRole('button', { name: /Routine finished/ })).toBeVisible();
+    const historyLength = await page.evaluate(() => history.length);
+    const search = page.getByRole('searchbox', { name: 'Search inbox' });
+    await search.pressSequentially('Build');
+    await expect(page.getByRole('button', { name: /Routine finished/ })).toHaveCount(0);
+    await expect(page).toHaveURL('/inbox?status=all&owner=laptop&tag=a&tag=b&q=Build');
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+    await page.reload();
+    await expect(search).toHaveValue('Build');
+    await expect(page.getByRole('button', { name: /Build finished/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Routine finished/ })).toHaveCount(0);
+    await search.fill('');
+    await expect(page).toHaveURL('/inbox?status=all&owner=laptop&tag=a&tag=b');
+    await expect(page.getByRole('button', { name: /Routine finished/ })).toBeVisible();
+  });
+
+  test('clears Inbox filters from a successful no-results state', async ({ mockedPage: page }) => {
+    await page.goto('/inbox?owner=laptop&status=unread&category=general&q=Build');
+    await expect(page.getByText('No messages match these filters.')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page).toHaveURL('/inbox?owner=laptop');
+    await expect(page.getByRole('searchbox', { name: 'Search inbox' })).toHaveValue('');
+    await expect(page.getByRole('button', { name: /Routine finished/ })).toBeVisible();
+  });
+
+  test('returning from a message reuses the Inbox list history entry', async ({ mockedPage: page }) => {
+    await page.goto('/sessions');
+    await page.getByRole('navigation', { name: 'Phone navigation' }).getByRole('link', { name: 'Inbox' }).click();
+    await page.getByRole('radio', { name: 'Primary' }).click();
+    await page.getByRole('button', { name: /Build finished/ }).click();
+    await expect(page.getByRole('heading', { name: 'Build finished' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to messages' }).click();
+    await expect(page).toHaveURL('/inbox?category=general');
+    await expect(page.getByRole('radio', { name: 'Primary' })).toBeChecked();
+    await page.goBack();
+    await expect(page).toHaveURL('/sessions');
+  });
+
+  test('a direct link replaces the reader with the filtered Inbox list', async ({ mockedPage: page }) => {
+    await page.goto('/inbox?category=general&q=Build&item=local%3Abuild');
+    await expect(page.getByRole('heading', { name: 'Build finished' })).toBeVisible();
+    const historyLength = await page.evaluate(() => history.length);
+    await page.getByRole('button', { name: 'Back to messages' }).click();
+    await expect(page).toHaveURL('/inbox?category=general&q=Build');
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+    await expect(page.getByRole('searchbox', { name: 'Search inbox' })).toHaveValue('Build');
+  });
+
+  test('Escape returns focus to Inbox actions without changing blur or click dismissal', async ({ mockedPage: page }) => {
+    await page.goto('/inbox');
+    const trigger = page.getByLabel('Inbox actions');
+    const action = page.getByRole('button', { name: 'Archive all read' });
+    const search = page.getByRole('searchbox', { name: 'Search inbox' });
+    await trigger.focus();
+    await trigger.press('Enter');
+    await action.focus();
+    await expect(action).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(action).toBeHidden();
+    await expect(trigger).toBeFocused();
+
+    await trigger.press('Enter');
+    await action.focus();
+    await search.focus();
+    await expect(action).toBeHidden();
+    await expect(search).toBeFocused();
+
+    await trigger.click();
+    await action.focus();
+    await search.click();
+    await expect(action).toBeHidden();
+    await expect(search).toBeFocused();
+  });
+});
+
 for (const pinned of [false, true]) {
   test(`clicked inbox row restores its timestamp after mouse leaves, pinned=${pinned}`, async ({ mockedPage: page }) => {
     const title = 'Hover message with a long subject that must not overlap the pin and archive controls';
@@ -125,6 +214,7 @@ test('header stays compact on desktop and gives phone filters room for touch', a
   const all = page.getByRole('radiogroup', { name: 'Message status' }).getByRole('radio', { name: 'All', exact: true });
   await all.click();
   await expect(all).toBeChecked();
+  await page.getByRole('searchbox', { name: 'Search inbox' }).fill('');
   await page.getByLabel('Inbox actions').click();
   await page.getByRole('button', { name: 'Archive all read', exact: true }).click();
   await expect(page.getByText('Your inbox is empty.')).toBeVisible();
