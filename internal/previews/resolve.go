@@ -144,10 +144,11 @@ func (m *Module) resolvePreview(ctx context.Context, viewerID, home string, req 
 		}
 	}
 	if req.Refresh {
-		ctx = linkpreview.WithPreviewRefresh(ctx)
-	}
-	if req.Render {
-		ctx = linkpreview.WithPRRenderRefresh(ctx)
+		if req.Render {
+			ctx = linkpreview.WithPRRenderRefresh(ctx)
+		} else {
+			ctx = linkpreview.WithPreviewRefresh(ctx)
+		}
 	}
 	previews := svc.Resolve(ctx, viewerID, home, refs)
 	if req.OpenGraph && !req.PRStatus && req.ChecksSHA == "" && access {

@@ -1,0 +1,49 @@
+import { skipToken, useQuery } from '@tanstack/react-query';
+import { PREVIEW_AUTH_EVENT } from './previews';
+import type { PreviewResult } from './previews';
+import { queryClient } from './queryClient';
+
+const prefix = ['link-preview'] as const;
+queryClient.setQueryDefaults(prefix, { gcTime: 60_000 });
+
+interface Snapshot {
+  order: number;
+  preview: PreviewResult;
+}
+
+let order = 0;
+let authChange = 0;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(PREVIEW_AUTH_EVENT, () => {
+    authChange = ++order;
+    queryClient.removeQueries({ queryKey: prefix });
+  });
+}
+
+export const beginPreviewRead = () => ++order;
+export const previewReadIsCurrent = (read: number) => read > authChange;
+
+function previewKey(owner: string, preview: PreviewResult) {
+  return [...prefix, owner, preview.provider, preview.workspace, preview.kind, preview.id, preview.url] as const;
+}
+
+export function publishPreview(owner: string, preview: PreviewResult, read: number) {
+  if (!preview.url || !previewReadIsCurrent(read)) return;
+  queryClient.setQueryData<Snapshot>(previewKey(owner, preview), (previous) => {
+    if (previous && (previous.order > read || preview.state === 'error' || preview.state === 'rate_limited')) return undefined;
+    // Keep explicitly refreshed checks and approval on identical metadata reads.
+    const old = previous?.preview;
+    if (old?.state === 'ok' && preview.state === 'ok' && preview.kind === 'pr' &&
+      ((old.status === 'Merged' && preview.status !== 'Merged') || Date.parse(old.updatedAt ?? '') > Date.parse(preview.updatedAt ?? ''))) return undefined;
+    if (old && preview.state === 'ok' && old.state === 'ok' && old.headSha === preview.headSha && old.updatedAt === preview.updatedAt && old.status === preview.status) {
+      preview = { ...preview, checks: preview.checks ?? old.checks, prStatus: preview.prStatus ?? old.prStatus };
+    }
+    return { order: read, preview };
+  });
+}
+
+export function useSharedPreview(owner: string, preview: PreviewResult) {
+  const { data } = useQuery<Snapshot>({ queryKey: previewKey(owner, preview), queryFn: skipToken, subscribed: !!preview.url }, queryClient);
+  return data?.preview ?? preview;
+}

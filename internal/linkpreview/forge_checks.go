@@ -17,7 +17,7 @@ type previewRefreshKey struct{}
 
 type prRenderRefreshKey struct{}
 
-// WithPRRenderRefresh revalidates conversation PRs, leaving other previews cached.
+// WithPRRenderRefresh revalidates non-merged conversation PRs.
 func WithPRRenderRefresh(ctx context.Context) context.Context {
 	return context.WithValue(ctx, prRenderRefreshKey{}, true)
 }

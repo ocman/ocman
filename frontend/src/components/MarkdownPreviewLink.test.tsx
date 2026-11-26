@@ -178,6 +178,11 @@ it('lets Tab enter the card and continue to the next page control', async () => 
   await user.tab();
   expect(screen.getByTestId('provider-preview-card')).toHaveFocus();
   await user.tab();
+  expect(screen.getByRole('button', { name: 'Refresh preview' })).toHaveFocus();
+  await user.tab({ shift: true });
+  expect(screen.getByTestId('provider-preview-card')).toHaveFocus();
+  await user.tab();
+  await user.tab();
   expect(screen.getByRole('link', { name: 'Next link' })).toHaveFocus();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
@@ -227,6 +232,7 @@ it('skips CSS-hidden and inert tool controls when leaving the preview', async ()
   await screen.findByRole('dialog', { name: 'Link preview' }, { timeout: 3000 });
   await user.tab();
   expect(screen.getByTestId('provider-preview-card')).toHaveFocus();
+  await user.tab();
   await user.tab();
   expect(screen.getByRole('link', { name: 'Next visible link' })).toHaveFocus();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

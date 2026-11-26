@@ -56,14 +56,17 @@ it.each([
   fetch.mockResolvedValue(response(done));
   vi.stubGlobal('fetch', fetch);
   try {
-    render(<ProviderPreview providers={[]} preview={{ ...preview, status }} />);
+    render(<ProviderPreview providers={[]} preview={{ ...preview, status, checks: status === 'Merged' ? { state, checks: [{ name: 'build', state }] } : undefined }} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByLabelText(label)).toBeInTheDocument();
     const card = screen.getByTestId('provider-preview-card');
     const icon = card.querySelector('.gh-preview__icon')!;
     expect(getComputedStyle(card).borderLeftColor).toBe(color);
     expect(getComputedStyle(icon).color).toBe(color);
-    if (state === 'pending' || error) {
+    if (status === 'Merged') {
+      await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
+      expect(fetch).not.toHaveBeenCalled();
+    } else if (state === 'pending' || error) {
       await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
       expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
       const settledColor = status === 'Open' ? 'rgb(0, 128, 0)' : color;

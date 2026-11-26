@@ -222,6 +222,11 @@ export async function resolvePreviews(text: string, remoteId = 'local', signal?:
   return requestPreview({ text, render: true, ...(refresh ? { refresh: true } : {}), ...(openGraph ? { openGraph: true } : {}) }, remoteId, signal);
 }
 
+/** Refresh one card, including merged PRs, without refreshing its neighbors. */
+export function reloadPreview(url: string, owner: string, signal: AbortSignal, openGraph: boolean): Promise<PreviewResult[]> {
+  return requestPreview({ text: url, refresh: true, ...(openGraph ? { openGraph: true } : {}) }, owner, signal);
+}
+
 export async function fetchPreviewChecks(url: string, sha: string, remoteId: string, signal: AbortSignal, refresh = false): Promise<PRChecks> {
   const previews = await requestPreview({ text: url, checksSha: sha, ...(refresh ? { refreshChecks: true } : {}) }, remoteId, signal);
   const preview = previews[0];

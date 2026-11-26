@@ -70,11 +70,13 @@ it('fills the sidebar status cache from a preview without needing a head SHA', a
 });
 
 it.each(['Draft', 'Closed', 'Merged'])('renders %s status without a mergeability claim for settled PRs', async (status) => {
-  vi.spyOn(previews, 'fetchPreviewPRStatus').mockResolvedValue({ mergeable: null, approved: true });
-  render(<ProviderPreview preview={{ ...preview, status, headSha: undefined }} providers={[]} />);
+  const result = { mergeable: null, approved: true };
+  const fetch = vi.spyOn(previews, 'fetchPreviewPRStatus').mockResolvedValue(result);
+  render(<ProviderPreview preview={{ ...preview, status, headSha: undefined, prStatus: status === 'Merged' ? result : undefined }} providers={[]} />);
   expect(await screen.findByText('Approved')).toBeInTheDocument();
   if (status === 'Draft') expect(screen.getByText('Not mergeable')).toBeInTheDocument();
   else expect(screen.queryByText(/^(Not mergeable|Mergeable)$/)).toBeNull();
+  if (status === 'Merged') expect(fetch).not.toHaveBeenCalled();
 });
 
 it('does not reuse status from a different owner', async () => {

@@ -6,6 +6,7 @@ import { useDocumentVisible } from './usePanelVisible';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, PreviewSessionContext, loadPreviewConfig, previewCandidates, resolvePreviews } from './previews';
 import type { PreviewConfig, PreviewProvider, PreviewResult } from './previews';
+import { beginPreviewRead, previewReadIsCurrent, publishPreview } from './sharedPreviews';
 
 // The request batcher adds 20 ms, keeping the total initial delay at 300 ms.
 const RESOLVE_DELAY_MS = 280;
@@ -97,10 +98,12 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
         const worth = openGraph ? /^https?:\/\//.test(text) : config ? candidates.length > 0 : /https:\/\//.test(text);
         if (!worth || abort.signal.aborted) return;
         const refresh = refreshPending.current;
+        const read = beginPreviewRead();
         const previews = openGraph
           ? await resolvePreviews(text, owner, abort.signal, refresh, true)
           : await resolvePreviews(text, owner, abort.signal, refresh);
-        if (!abort.signal.aborted) {
+        if (!abort.signal.aborted && previewReadIsCurrent(read)) {
+          for (const preview of previews) publishPreview(owner, preview, read);
           if (refresh) refreshPending.current = false;
           const result = { text, owner, session, previews, providers: config?.providers ?? [], refreshChecks: refresh };
           lastResolved.current = result;

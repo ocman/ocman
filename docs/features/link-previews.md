@@ -11,9 +11,9 @@ you paste in Settings, or a sign-in. Open Graph requests send no credentials.
 ## Hover previews
 
 Hover over a markdown link or focus it with the keyboard for half a second to
-request a preview. The card appears once its metadata loads. Tab enters the card,
-Shift+Tab returns to the link, and Tab from the card continues to the next page
-control. You can move onto the card and click it; leaving the link and card
+request a preview. The card appears once its metadata loads. Tab moves from the
+link to the card, its refresh button, and then the next page control. Shift+Tab
+goes back. You can move onto the card and click it; leaving the link and card
 dismisses it, as does Escape. Escape also cancels a preview that is still loading.
 
 Rich provider cards take priority. Otherwise, pages with an `og:title` can show
@@ -35,15 +35,18 @@ A recognized link renders in one of two ways:
   missing or rate limited. A private resource says to add a token under
   **Settings → Link previews**.
 - **Rich card.** Title, status, author or assignee, and last update. Cards are
-  normally cached for a minute and dropped whenever a token or sign-in changes.
-  GitHub and Forgejo PR cards revalidate when shown and after switching sessions.
+   cached by the backend for a minute across page and session changes. Cards for
+   the same resource update together when new data arrives. Use the small refresh
+   button in the top-right corner to fetch fresh data for that resource only.
+   Merged PR cards don't poll or revalidate on viewport reentry; a newly opened
+   page still loads the preview if the backend cache has expired.
 
 A custom link rule without a provider always produces a fallback-style card
 that points at its replacement URL.
 
 GitHub and Forgejo PR cards also show CI status for the PR's head commit.
 They update the sidebar's repository-and-SHA cache, but revalidate completed
-checks when shown rather than trusting an older cached result. Visible cards check every 5 seconds
+checks when shown rather than trusting an older cached result. Visible non-merged cards check every 5 seconds
 until every check finishes. Rate-limited results never become final cached
 results. Empty checks are confirmed over one minute before caching. Errors
 back off from 5 to 60 seconds, retaining that delay when a card leaves and

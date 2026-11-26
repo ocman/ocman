@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 import type { PreviewResult } from '../lib/previews';
 
@@ -48,6 +48,48 @@ it('renders public forge links as normalized cards without any connected provide
   expect(card).toHaveClass('gh-preview--merged');
   expect(card).toHaveTextContent('Merged · ann');
   expect(screen.queryByRole('status')).toBeNull();
+});
+
+it('updates older cards when a later message resolves the same PR as merged', async () => {
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  const conversation = (later: boolean) => <>
+    <LinkPreviewStrip text={`CI is pending on ${pr.url}`} />
+    {later && <LinkPreviewStrip text={`${pr.url} has now merged`} />}
+  </>;
+  previews = [{ ...pr, status: 'Open' }];
+  const { rerender } = render(conversation(false));
+  const first = await screen.findByRole('link', { name: /Shared PR/ });
+  expect(first).toHaveTextContent('Open');
+
+  previews = [pr];
+  rerender(conversation(true));
+  await waitFor(() => expect(screen.getAllByText('Merged', { exact: true })).toHaveLength(2));
+  expect(first).toHaveTextContent('Merged');
+});
+
+it('refreshes a merged preview on demand without refreshing other PRs', async () => {
+  const other = { ...pr, id: 'o/r#2', title: 'Other PR', url: 'https://github.com/o/r/pull/2' };
+  const originalFetch = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+  fetchMock.mockImplementation((url: string, init: { body: string }) => {
+    if (!url.startsWith('/api/previews/resolve')) return originalFetch(url);
+    const body = JSON.parse(init.body);
+    const resolve = (req: typeof body) => ({ previews: req.checksSha
+      ? [{ state: 'ok', checks: { state: 'success', checks: [] } }]
+      : req.prStatus ? [{ state: 'ok', prStatus: { mergeable: null, approved: true } }]
+      : req.render ? [pr, other] : [{ ...pr, title: 'Refreshed PR', headSha: 'abc123' }] });
+    return Promise.resolve(jsonResponse(body.requests ? { results: body.requests.map(resolve) } : resolve(body)));
+  });
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text={`${pr.url} ${other.url}`} />);
+  const [refresh] = await screen.findAllByRole('button', { name: 'Refresh preview' });
+  expect(resolveCalls()).toHaveLength(1);
+  fireEvent.click(refresh);
+  expect(await screen.findByRole('link', { name: /Refreshed PR/ })).toBeInTheDocument();
+  expect(await screen.findByLabelText('All checks passed')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Other PR/ })).toBeInTheDocument();
+  const requests = resolveCalls().slice(1).flatMap(([, { body }]) => JSON.parse(body).requests ?? [JSON.parse(body)]);
+  expect(requests).toContainEqual({ text: pr.url, refresh: true });
+  expect(requests.every((request) => request.text === pr.url)).toBe(true);
 });
 
 it('reserves one card per distinct previewable link until the results arrive', async () => {
@@ -139,7 +181,7 @@ it('refreshes the PR head before fetching fresh checks for the new commit', asyn
         return { previews: [{ state: 'ok', checks: { state, checks: [{ name: 'build', state }] } }] };
       }
       if (one.prStatus) return { previews: [{ state: 'ok', prStatus: { mergeable: true, approved: false } }] };
-      return { previews: [{ ...pr, headSha: one.refresh ? head : 'abc123' }] };
+      return { previews: [{ ...pr, status: 'Open', headSha: one.refresh ? head : 'abc123' }] };
     };
     return Promise.resolve(jsonResponse(body.requests ? { results: body.requests.map(resolve) } : resolve(body)));
   });

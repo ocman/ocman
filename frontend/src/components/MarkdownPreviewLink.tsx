@@ -64,8 +64,14 @@ export function MarkdownPreviewLink({ href, children, ...props }: ComponentProps
       event.preventDefault();
       card.focus();
     } else {
+      const refresh = panel?.querySelector<HTMLButtonElement>('.gh-preview__refresh:not(:disabled)');
+      if (!event.shiftKey && event.target === card && refresh) {
+        event.preventDefault();
+        refresh.focus();
+        return;
+      }
       event.preventDefault();
-      if (event.shiftKey) trigger.current?.focus();
+      if (event.shiftKey) (event.target === refresh ? card : trigger.current)?.focus();
       else {
         const items = Array.from(document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]'))
           .filter((item) => item.tabIndex >= 0 && !item.matches(':disabled') && !item.closest('[hidden],[inert]')

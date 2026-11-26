@@ -189,8 +189,9 @@ flowchart LR
   refresh only; remote cookies and arbitrary HTTP routes never cross it. File
   signatures are checked on the owner, with inert/interactive CSP and range
   semantics preserved. Disconnected owners fail closed.
-- **Conversation PR previews.** Showing a card or switching sessions revalidates
-  PR metadata, checks and review status. The browser bundles simultaneous lookups
+- **Conversation PR previews.** The backend caches metadata by viewer, owner and
+  resource; cards for that resource share updates in the browser. Merged cards
+  stop background revalidation, but their per-card refresh still works. The browser bundles simultaneous lookups
   by owner, deduplicates identical requests, and cancels a shared request only
   after its last reader leaves. `/api/previews/resolve` accepts up to 32 lookups
   per batch with independent results. Provider calls still use bounded concurrency,

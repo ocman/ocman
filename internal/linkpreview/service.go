@@ -105,9 +105,6 @@ func grantKey(viewerID, ownerID, provider, workspace string) string {
 }
 
 func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref) Preview {
-	if ctx.Value(prRenderRefreshKey{}) == true && ref.Kind == "pr" && (ref.Provider == "github" || strings.HasPrefix(ref.Provider, "forgejo:")) {
-		ctx = WithPreviewRefresh(ctx)
-	}
 	r, ok := s.byID[ref.Provider]
 	if !ok {
 		return Preview{Ref: ref, State: StateError}
@@ -180,10 +177,11 @@ func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOn
 	now := s.now()
 	s.mu.Lock()
 	cached, hit := s.cache[key]
-	fresh := hit && now.Before(cached.expires)
-	if ctx.Value(previewRefreshKey{}) == true {
-		fresh = false
-	}
+	merged := hit && ref.Kind == "pr" && cached.p.State == StateOK && cached.p.Status == "Merged"
+	refresh := ctx.Value(previewRefreshKey{}) == true
+	revalidate := ctx.Value(prRenderRefreshKey{}) == true && ref.Kind == "pr" && !merged
+	// Even merged entries expire: upstream visibility can change independently of grants.
+	fresh := hit && !refresh && !revalidate && now.Before(cached.expires)
 	limited := !fresh && now.Before(s.backoff[previewBackoffKey(gk, ref)])
 	s.mu.Unlock()
 	if fresh {
@@ -191,6 +189,9 @@ func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOn
 	}
 	if limited {
 		return staleOr(cached, hit, ref)
+	}
+	if revalidate {
+		ctx = WithPreviewRefresh(ctx)
 	}
 	v, _, _ := s.group.Do(key, func() (any, error) {
 		return s.fetch(ctx, r, &API{token: token, publicOnly: publicOnly}, grant, viewerID, ownerID, gk, key, ref), nil
