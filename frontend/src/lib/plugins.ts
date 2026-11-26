@@ -130,7 +130,7 @@ export const plugins = {
     postJSON<unknown>(url(owner, `/${encodeURIComponent(id)}/${action}`), input),
   stderr: (owner: string, id: string) => fetchJSON<{ stderr: string }>(url(owner, `/${encodeURIComponent(id)}/stderr`)),
   projectCatalog: (owner: string, directory: string, platform = '', signal?: AbortSignal) =>
-    postJSON<{ agents: string[]; models: string[] }>(url(owner, '/project-catalog'), { directory, platform }, { signal }),
+    postJSON<{ agents: string[] | null; models: string[] | null } | null>(url(owner, '/project-catalog'), { directory, platform }, { signal }),
   backlog: (owner: string, id: string, signal?: AbortSignal) =>
     fetchJSON<PluginBacklog>(url(owner, `/${encodeURIComponent(id)}/conversations`), signal),
   agentTools: (owner: string, id: string, signal?: AbortSignal) =>

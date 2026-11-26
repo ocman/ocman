@@ -350,6 +350,24 @@ it('reads the Slack catalog on the installation platform', async () => {
   plugin.configuration.values = { mode: 'good' };
 });
 
+it('opens Slack settings when the project catalog has no agents or models', async () => {
+  plugin.description.id = 'org.ocman.slack';
+  plugin.description.settings = [
+    { key: 'agent', type: 'string', label: 'Agent' },
+    { key: 'model', type: 'string', label: 'Model' },
+  ];
+  plugin.configuration.values = { project: '/repo', agent: 'saved-agent' };
+  // Empty Go slices reach the browser as JSON null, not [].
+  const catalog = Promise.resolve({ agents: null, models: null });
+  vi.mocked(plugins.projectCatalog).mockReturnValue(catalog);
+  await open();
+  click('Configure');
+  expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', '', expect.any(AbortSignal));
+  await act(async () => { await catalog; });
+  expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent('saved-agent');
+  expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Default model');
+});
+
 it('preserves saved plugin selections when the project catalog is unavailable', async () => {
   plugin.description.id = 'org.ocman.slack';
   plugin.description.settings = [

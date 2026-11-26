@@ -55,8 +55,8 @@ export function PluginConfiguration({ plugin, save, error = '', saving = false, 
     if (!project) return;
     const controller = new AbortController();
     plugins.projectCatalog(plugin.ownerId, project, platform, controller.signal)
-      .then((next) => setCatalog({ project: catalogKey, ...next }))
-      .catch(() => setCatalog({ project: catalogKey, agents: [], models: [] }));
+      .then((next) => setCatalog({ project: catalogKey, agents: next?.agents ?? [], models: next?.models ?? [] }))
+      .catch(() => setCatalog({ project: catalogKey, ...emptyCatalog }));
     return () => controller.abort();
   }, [plugin.ownerId, project, platform, catalogKey]);
 
