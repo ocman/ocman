@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, screen } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { expect, it, vi } from 'vitest';
 import { renderWithQuery as render } from '../test/renderWithQuery';
 import type { Session } from '../lib/api';
@@ -9,6 +9,11 @@ import { useIsPhone } from '../lib/useIsPhone';
 
 vi.mock('../lib/useIsPhone', () => ({ useIsPhone: vi.fn(() => false) }));
 vi.mock('../lib/useGitInfo', () => ({ useGitInfo: () => ({ infos: {} }) }));
+vi.mock('../lib/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => true) }));
+
+function CurrentPath() {
+  return <span>{useLocation().pathname}</span>;
+}
 
 const session = (over: Partial<Session>) => ({
   id: 'ses_1', platform: 'opencode', title: 'One prompt', directory: '/src/foo', status: 'done', seen: true,
@@ -39,4 +44,16 @@ it('keeps an activity summary in the stacked phone row and hides it while totals
   rerender(<MemoryRouter><SessionTable showProject sessions={[session({})]} activityPendingKeys={new Set(['opencode:ses_1'])} /></MemoryRouter>);
   expect(document.querySelector('.phone-session-activity')).toBeNull();
   vi.mocked(useIsPhone).mockReturnValue(false);
+});
+
+it('keeps copy clicks in the table and lets ordinary row clicks open the session', async () => {
+  render(<MemoryRouter initialEntries={['/sessions']}>
+    <CurrentPath />
+    <SessionTable showProject={false} sessions={[session({})]} />
+  </MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'Copy session ID' }));
+  expect(await screen.findByText('Copied!')).toBeInTheDocument();
+  expect(screen.getByText('/sessions')).toBeInTheDocument();
+  fireEvent.click(screen.getByTitle('1 prompt'));
+  expect(screen.getByText('/session/ses_1')).toBeInTheDocument();
 });

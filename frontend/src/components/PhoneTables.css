@@ -39,7 +39,7 @@
   .phone-session-table > tbody > tr > td:not(:first-child, :last-child),
   .phone-project-table > tbody > tr > td:not(:first-child, :last-child) { display: none; }
   .phone-session-table .session-row-link { min-height: 80px; padding: 17px 0; }
-  .phone-session-table .session-row-link > .mono { display: none; }
+  .phone-session-table .session-row-id { display: none; }
   .phone-session-table .session-title {
     color: var(--text);
     font-size: 15px;

@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Session } from '../lib/api';
-import { cleanTitle, formatCount, formatDuration, formatExactDate, relativeTime } from '../lib/format';
+import { cleanTitle, formatCount, formatDuration } from '../lib/format';
 import { formatCost, sessionActivityDetails, sessionCost } from '../lib/listActivity';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import { useIsPhone } from '../lib/useIsPhone';
@@ -10,6 +10,8 @@ import { StatusBadge } from './StatusBadge';
 import { PhoneSessionMeta } from './PhoneSessionMeta';
 import { ShortPath } from './SessionTableDetails';
 import { ArchiveButton } from './ArchiveButton';
+import { CopyButton } from './CopyButton';
+import { RelativeTimestamp } from './RelativeTime';
 import { SnoozeButton } from './SnoozeButton';
 import './SessionSwipe.css';
 
@@ -45,8 +47,11 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
         </div>
         <PhoneSessionMeta session={session} activity={activityPending ? undefined
           : `${formatCount(session.messageCount, 'prompt')} \u00b7 ${formatDuration(session.durationMs)} \u00b7 ${formatCost(sessionCost(session))}`} />
-        <div className="mono">{session.id}</div>
       </Link>
+      <div className="session-row-id" onClick={event => event.stopPropagation()}>
+        <span className="mono">{session.id}</span>
+        <CopyButton iconOnly variant="ghost" text={session.id} label="Copy session ID" />
+      </div>
     </td>
     {showProject && <td className="mono"><ShortPath path={session.directory} /></td>}
     {activityPending ? <td colSpan={3} className="list-numeric-pending">Loading activity…</td> : <>
@@ -54,7 +59,7 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
       <td className="mono list-numeric" title={sessionActivityDetails(session)}>{formatDuration(session.durationMs)}</td>
       <td className="mono list-numeric">{formatCost(sessionCost(session))}</td>
     </>}
-    <td><span title={formatExactDate(session.timeCreated)}>{relativeTime(session.timeCreated)}</span></td>
+    <td><RelativeTimestamp value={session.timeCreated} /></td>
     <td className="session-action-cell session-swipe-actions">
       {phone && <SnoozeButton session={session} disabled={archiving} open={snoozeOpen} onOpenChange={setSnoozeOpen} onBusyChange={setSnoozing} />}
       <ArchiveButton iconSize={14} label="Archive session" title="Archive session (reappears on new activity)"

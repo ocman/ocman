@@ -57,6 +57,12 @@
   text-decoration: none;
 }
 
+.session-row-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 tr:has(.session-row-link):hover {
   background: color-mix(in srgb, var(--accent) 6%, var(--bg));
 }
