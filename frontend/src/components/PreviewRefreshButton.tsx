@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchPreviewChecks, fetchPreviewPRStatus, reloadPreview } from '../lib/previews';
 import type { PreviewResult } from '../lib/previews';
-import { beginPreviewRead, previewReadIsCurrent, publishPreview } from '../lib/sharedPreviews';
+import { beginPreviewRead, previewChecksKeys, previewPRContext, previewReadIsCurrent, publishPreview } from '../lib/sharedPreviews';
+import { seedPRChecks } from '../lib/usePRChecks';
+import { seedPRMergeability } from '../lib/usePRMergeability';
 import { SubmitButton } from './Control';
 
 async function refreshPRDetails(preview: PreviewResult, url: string, owner: string, signal: AbortSignal) {
@@ -40,7 +42,13 @@ export function PreviewRefreshButton({ preview, owner }: { preview: PreviewResul
         const details = await refreshPRDetails(snapshot, url, owner, signal);
         if (signal.aborted || !previewReadIsCurrent(read)) return;
         setFailed(details.failed);
-        publishPreview(owner, details.preview, read);
+        if (next.status === 'Merged') {
+          publishPreview(owner, details.preview, read);
+        } else {
+          const cardURL = preview.url;
+          if (details.preview.checks && next.headSha) seedPRChecks(...previewChecksKeys(next, cardURL, owner), details.preview.checks);
+          if (details.preview.prStatus) seedPRMergeability(previewPRContext(next, cardURL), owner, details.preview.prStatus);
+        }
       }
     } catch {
       if (!signal.aborted && previewReadIsCurrent(read)) setFailed(true);

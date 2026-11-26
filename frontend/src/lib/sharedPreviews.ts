@@ -2,6 +2,18 @@ import { skipToken, useQuery } from '@tanstack/react-query';
 import { PREVIEW_AUTH_EVENT } from './previews';
 import type { PreviewResult } from './previews';
 import { queryClient } from './queryClient';
+import { prChecksCacheKey } from './prChecksCache';
+
+export function previewPRContext(preview: PreviewResult, url: string) {
+  const [repo, number] = preview.id.split('#');
+  const status = preview.status === 'Merged' ? 'merged' : preview.status === 'Closed' ? 'closed' : preview.status === 'Draft' ? 'draft' : 'open';
+  return { host: new URL(url).host, repo, number: Number(number), headSha: preview.headSha, updatedAt: preview.updatedAt ?? '', status } as const;
+}
+
+export function previewChecksKeys(preview: PreviewResult, url: string, owner: string) {
+  const { host, repo, headSha = '' } = previewPRContext(preview, url);
+  return [prChecksCacheKey(host, repo, headSha), `${owner}\0${url}\0${headSha}`] as const;
+}
 
 const prefix = ['link-preview'] as const;
 queryClient.setQueryDefaults(prefix, { gcTime: 60_000 });

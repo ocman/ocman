@@ -28,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -90,6 +91,43 @@ it('refreshes a merged preview on demand without refreshing other PRs', async ()
   const requests = resolveCalls().slice(1).flatMap(([, { body }]) => JSON.parse(body).requests ?? [JSON.parse(body)]);
   expect(requests).toContainEqual({ text: pr.url, refresh: true });
   expect(requests.every((request) => request.text === pr.url)).toBe(true);
+});
+
+it('updates a manually refreshed open PR when live checks and review status settle', async () => {
+  vi.useFakeTimers();
+  const open = { ...pr, status: 'Open', headSha: 'abc123abc' };
+  let checks = 'success';
+  let mergeable: boolean | null = true;
+  const originalFetch = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+  fetchMock.mockImplementation((url: string, init: { body: string }) => {
+    if (!url.startsWith('/api/previews/resolve')) return originalFetch(url);
+    const body = JSON.parse(init.body);
+    const resolve = (req: typeof body) => ({ previews: req.checksSha
+      ? [{ state: 'ok', checks: { state: checks, checks: [{ name: 'build', state: checks }] } }]
+      : req.prStatus ? [{ state: 'ok', prStatus: { mergeable, approved: mergeable } }]
+      : [open] });
+    return Promise.resolve(jsonResponse(body.requests ? { results: body.requests.map(resolve) } : resolve(body)));
+  });
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text={open.url!} />);
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  await act(async () => vi.advanceTimersByTimeAsync(10));
+  expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
+  expect(screen.getByText('Approved')).toBeInTheDocument();
+
+  checks = 'pending';
+  mergeable = null;
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(screen.getByLabelText('Checks running')).toBeInTheDocument();
+  expect(screen.queryByText('Approved')).not.toBeInTheDocument();
+
+  checks = 'success';
+  mergeable = false;
+  await act(async () => vi.advanceTimersByTimeAsync(16_000));
+  await act(async () => vi.advanceTimersByTimeAsync(10));
+  expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
+  expect(screen.getByText('Not mergeable')).toBeInTheDocument();
 });
 
 it('reserves one card per distinct previewable link until the results arrive', async () => {

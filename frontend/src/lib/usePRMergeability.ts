@@ -1,16 +1,27 @@
 import { fetchPRMergeability, UpstreamApiError } from './upstreamApi';
 import type { PR, PRMergeability } from './upstreamApi';
-import { usePRQuery } from './prQuery';
+import { seedPRPoll, usePRQuery } from './prQuery';
 
-export function usePRMergeability(pr: Pick<PR, 'host' | 'repo' | 'number' | 'status' | 'headSha' | 'updatedAt' | 'mergeable'>, dir: string, remoteId: string, remote: string, visible: boolean, loadStatus?: (signal: AbortSignal, refresh: boolean) => Promise<PRMergeability>, refreshOnMount = false) {
-  const { number, status, mergeable, headSha, updatedAt } = pr;
-  const knownMergeability = status !== 'open' || mergeable != null;
-  const query = usePRQuery<PRMergeability>(['pr-status', `${pr.host}/${pr.repo}`, remoteId, number, headSha, updatedAt, status], visible, async (signal, previous, refresh) => {
+type PRContext = Pick<PR, 'host' | 'repo' | 'number' | 'status' | 'headSha' | 'updatedAt' | 'mergeable'>;
+
+const queryKey = (pr: PRContext, owner: string) => ['pr-status', `${pr.host}/${pr.repo}`, owner, pr.number, pr.headSha, pr.updatedAt, pr.status];
+
+function statusPoll(pr: PRContext, value: PRMergeability) {
+  const settled = value.approved != null && (pr.status !== 'open' || pr.mergeable != null || value.mergeable != null);
+  return { value, nextPollAt: settled ? undefined : Date.now() + 15_000 };
+}
+
+export function seedPRMergeability(pr: PRContext, owner: string, value: PRMergeability) {
+  seedPRPoll(queryKey(pr, owner), statusPoll(pr, value));
+}
+
+export function usePRMergeability(pr: PRContext, dir: string, remoteId: string, remote: string, visible: boolean, loadStatus?: (signal: AbortSignal, refresh: boolean) => Promise<PRMergeability>, refreshOnMount = false) {
+  const { number, mergeable } = pr;
+  const query = usePRQuery<PRMergeability>(queryKey(pr, remoteId), visible, async (signal, previous, refresh) => {
     refresh ||= previous?.refresh ?? false;
     try {
       const value = await (loadStatus ? loadStatus(signal, refresh) : fetchPRMergeability({ dir, remoteId, remote, number, signal, refresh }));
-      const settled = value.approved != null && (knownMergeability || value.mergeable != null);
-      return { value, nextPollAt: settled ? undefined : Date.now() + 15_000 };
+      return statusPoll(pr, value);
     } catch (error) {
       signal.throwIfAborted();
       const status = error instanceof UpstreamApiError ? error.envelope?.error.upstreamStatus || error.status : 0;

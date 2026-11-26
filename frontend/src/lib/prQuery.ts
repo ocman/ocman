@@ -14,6 +14,12 @@ export interface PRPoll<T> {
   refresh?: boolean;
 }
 
+/** Replace an in-flight poll with the result of an explicit refresh. */
+export function seedPRPoll<T>(queryKey: QueryKey, data: PRPoll<T>) {
+  void queryClient.cancelQueries({ queryKey, exact: true });
+  queryClient.setQueryData(queryKey, data);
+}
+
 // Refresh also discards results retained by unmounted rows.
 if (typeof window !== 'undefined') {
   window.addEventListener(PR_CHECKS_REFRESH_EVENT, (event) => {

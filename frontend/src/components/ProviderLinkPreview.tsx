@@ -2,9 +2,9 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import { PreviewOwnerContext, PreviewSessionContext, fetchPreviewChecks, fetchPreviewPRStatus } from '../lib/previews';
 import { usePRMergeability } from '../lib/usePRMergeability';
-import { getCachedPRChecks, prChecksCacheKey } from '../lib/prChecksCache';
+import { getCachedPRChecks } from '../lib/prChecksCache';
 import { CI_LABEL, usePRChecks } from '../lib/usePRChecks';
-import { useSharedPreview } from '../lib/sharedPreviews';
+import { previewChecksKeys, previewPRContext, useSharedPreview } from '../lib/sharedPreviews';
 import { hasRichPreview } from '../lib/useProviderPreviews';
 import type { PreviewProvider, PreviewResult } from '../lib/previews';
 import { RelativeTime } from './RelativeTime';
@@ -70,12 +70,11 @@ function PreviewCI({ preview, onReappear }: { preview: PreviewResult; onReappear
   const owner = useContext(PreviewOwnerContext);
   const url = preview.url!;
   const sha = preview.headSha ?? '';
-  const repo = preview.id.split('#')[0];
-  const key = prChecksCacheKey(new URL(url).host, repo, sha);
+  const [key, requestKey] = previewChecksKeys(preview, url, owner);
   const loadChecks = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewChecks(url, sha, owner, signal, refresh), [url, sha, owner]);
   const merged = preview.status === 'Merged';
-  const checks = usePRChecks(key, `${owner}\0${url}\0${sha}`, visible && !!sha && !merged, loadChecks, true);
-  const saved = preview.checks ?? (merged && sha ? getCachedPRChecks(key) : undefined);
+  const checks = usePRChecks(key, requestKey, visible && !!sha && !merged, loadChecks, true);
+  const saved = merged ? preview.checks ?? (sha ? getCachedPRChecks(key) : undefined) : undefined;
   const state = saved?.state ?? checks.state;
   const failed = !saved && checks.error;
   const label = failed ? 'Failed to load checks' : !saved && checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[state];
@@ -87,10 +86,11 @@ function PreviewCI({ preview, onReappear }: { preview: PreviewResult; onReappear
 function PreviewPRStatus({ preview, owner, visible }: { preview: PreviewResult; owner: string; visible: boolean }) {
   const url = preview.url!;
   const loadStatus = (signal: AbortSignal, refresh: boolean) => fetchPreviewPRStatus(url, owner, signal, refresh);
-  const status = preview.status === 'Merged' ? 'merged' : preview.status === 'Closed' ? 'closed' : preview.status === 'Draft' ? 'draft' : 'open';
+  const pr = previewPRContext(preview, url);
+  const { status } = pr;
   const supported = preview.provider === 'github' || preview.provider.startsWith('forgejo:');
-  const loaded = usePRMergeability({ host: new URL(url).host, repo: preview.id.split('#')[0], number: Number(preview.id.split('#')[1]), headSha: preview.headSha, updatedAt: preview.updatedAt ?? '', status }, '', owner, '', visible && supported && status !== 'merged', loadStatus, true);
-  const { mergeable, approved } = preview.prStatus ?? loaded;
+  const loaded = usePRMergeability(pr, '', owner, '', visible && supported && status !== 'merged', loadStatus, true);
+  const { mergeable, approved } = status === 'merged' ? preview.prStatus ?? loaded : loaded;
   const mergeLabel = status === 'open' || status === 'draft' ? status === 'draft' || mergeable === false ? 'Not mergeable' : mergeable === true ? 'Mergeable' : undefined : undefined;
   return <span className="gh-preview__meta">
     {(mergeLabel || approved === true) && <span aria-hidden="true">·</span>}
