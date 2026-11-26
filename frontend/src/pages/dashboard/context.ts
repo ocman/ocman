@@ -15,12 +15,8 @@ export interface DashboardCtx {
   hasSessionsOutsideRange: boolean;
   projectsLoading: boolean;
   projectsFetching: boolean;
-  /**
-   * Error message from the projects query, or null. Distinct from
-   * "loaded and empty": consumers must render this instead of an
-   * onboarding empty state, otherwise a backend outage reads as "you
-   * have no projects".
-   */
+  /** Whether the query has a successful result to keep displaying, even when empty. */
+  projectsLoaded: boolean;
   projectsError: string | null;
   loadSessions: () => void;
   refetchProjects: () => void;

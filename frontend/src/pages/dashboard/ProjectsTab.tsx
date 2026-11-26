@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { startTransition, useOptimistic, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { formatExactDate, formatProjectActivity, fuzzyMatch, relativeTime } from '../../lib/format';
 import { ACTIVITY_DEFINITIONS, formatCost, projectActivityDetails } from '../../lib/listActivity';
 import { sortBy, useUrlSort } from '../../lib/useUrlSort';
@@ -14,6 +14,7 @@ import { DashboardToolbar } from './DashboardToolbar';
 import { DataTable } from '../../components/DataTable';
 import { LoadingState } from '../../components/LoadingState';
 import { InlineAlert } from '../../components/InlineAlert';
+import { PageState } from '../../components/PageState';
 import { Button } from '../../components/Control';
 import type { Project } from '../../lib/api';
 import { MergeProjectModal } from './MergeProjectModal';
@@ -31,13 +32,28 @@ const projectSortValue = (p: Project, key: ProjectSortKey) =>
 export function ProjectsTab() {
   usePageTitle('Projects');
   const {
-    projects, projectsLoading, projectsFetching, projectsError, refetchProjects, dirScope, setDirScope,
+    projects, projectsLoading, projectsFetching, projectsLoaded, projectsError, refetchProjects, dirScope, setDirScope,
   } = useDashboardCtx();
+  const location = useLocation();
   const navigate = useNavigate();
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
-  const [search, setSearch] = useState('');
+  const params = new URLSearchParams(location.search);
+  const [search, optimisticSearch] = useOptimistic(params.get('q') ?? '');
   const [mergeSource, setMergeSource] = useState<Project | null>(null);
   const sort = useUrlSort(PROJECT_SORT_KEYS);
+
+  const updateFilters = (value: string, clear = false) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set('q', value);
+    else next.delete('q');
+    // Directory scope lives in the dashboard URL too. Clear both in one navigation.
+    if (clear) next.delete('dir');
+    startTransition(() => {
+      // Keep the controlled input current while the router commits the URL.
+      optimisticSearch(value);
+      navigate({ search: next.toString(), hash: location.hash }, { replace: !clear, state: location.state });
+    });
+  };
 
   // The picker is sourced from the full project list (so the user can
   // navigate up/down the tree); the table itself is filtered to the
@@ -51,18 +67,14 @@ export function ProjectsTab() {
     .filter((p) => matchesScope(p.directory, dirScope))
     .filter((p) => !q || fuzzyMatch(q, p.directory));
 
-  if (projectsLoading && projects.length === 0) {
+  if (projectsLoading && !projectsLoaded) {
     return <LoadingState>Loading projects...</LoadingState>;
   }
 
-  // A failed query must never fall through to the table below: with no
-  // data, the empty branch would render the first-run onboarding state
-  // and tell a user with dozens of projects that they have none.
-  if (projectsError && projects.length === 0) {
+  if (projectsError && !projectsLoaded) {
     return (
-      <InlineAlert onRetry={() => refetchProjects()} retrying={projectsFetching}>
-        {projectsError}
-      </InlineAlert>
+      <PageState error title="Projects are unavailable" description={projectsError}
+        onRetry={refetchProjects} retrying={projectsFetching} />
     );
   }
 
@@ -78,14 +90,18 @@ export function ProjectsTab() {
         dirScope={dirScope}
         setDirScope={setDirScope}
         search={search}
-        setSearch={setSearch}
+        setSearch={updateFilters}
         searchLabel="Search projects"
         actionIcon="bi-folder-plus"
         actionLabel="New project"
         actionTitle="Start a session in a project directory"
         onAction={openProjectPalette}
       />
-    <DataTable className="phone-project-table">
+    {visibleProjects.length === 0 && (q || dirScope) ? (
+      <PageState icon="bi-search" title="No matching projects" description="Try a different search or clear your filters to see all projects.">
+        <Button type="button" onClick={() => updateFilters('', true)}>Clear filters</Button>
+      </PageState>
+    ) : <DataTable className="phone-project-table">
       <thead>
         <tr>
           <th>Project</th>
@@ -138,7 +154,7 @@ export function ProjectsTab() {
           </tr>
         ))}
       </tbody>
-    </DataTable>
+    </DataTable>}
     {mergeSource && <MergeProjectModal source={mergeSource} projects={projects}
       onClose={() => setMergeSource(null)} onMerged={() => { void refetchProjects(); }} />}
     </div>

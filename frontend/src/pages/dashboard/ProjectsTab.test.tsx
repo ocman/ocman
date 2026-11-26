@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 //
-// The Projects tab has to tell three states apart: still loading, the
-// query failed, and the query succeeded with nothing in it. Only the
-// last one is onboarding. Rendering GettingStartedEmpty on a failure
-// tells a user with dozens of projects that they have none.
+// Onboarding is only for a successfully loaded, unfiltered empty list.
 
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -15,10 +12,6 @@ import type { DashboardCtx } from './context';
 const dashboardCtx = vi.fn();
 vi.mock('./context', () => ({
   useDashboard: () => dashboardCtx(),
-}));
-
-vi.mock('./DashboardToolbar', () => ({
-  DashboardToolbar: () => <div data-testid="dashboard-toolbar" />,
 }));
 
 // Imported after the mocks so ProjectsTab binds to them.
@@ -36,11 +29,12 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   } as Project;
 }
 
-function renderTab(ctx: Partial<DashboardCtx>) {
+function renderTab(ctx: Partial<DashboardCtx>, url = '/projects') {
   dashboardCtx.mockReturnValue({
     projects: [],
     projectsLoading: false,
     projectsFetching: false,
+    projectsLoaded: !ctx.projectsLoading && !ctx.projectsError,
     projectsError: null,
     refetchProjects: vi.fn(),
     dirScope: '',
@@ -48,7 +42,7 @@ function renderTab(ctx: Partial<DashboardCtx>) {
     ...ctx,
   });
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[url]}>
       <ProjectsTab />
     </MemoryRouter>,
   );
@@ -101,7 +95,7 @@ describe('ProjectsTab', () => {
       makeProject({ directory: '/target', projectKey: 'merged', sessionCount: 9 }),
     ];
     renderTab({ projects, dirScope: '/target' });
-    expect(screen.getByText('/target')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /\/target/ })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: '9' })).toBeInTheDocument();
     expect(screen.queryByText('/source')).not.toBeInTheDocument();
     expect(screen.queryByText('No projects found')).not.toBeInTheDocument();
@@ -147,20 +141,21 @@ describe('ProjectsTab', () => {
 
   it('shows an error with a retry when the query failed', () => {
     const refetchProjects = vi.fn();
-    renderTab({ projectsError: 'backend is not responding', refetchProjects });
+    renderTab({ projectsError: 'backend is not responding', refetchProjects }, '/projects?q=alpha');
 
     expect(screen.getByText(/backend is not responding/)).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('backend is not responding');
     expect(screen.getByRole('button', { name: /retry/i })).toHaveClass('oc-button');
     // A failure must not be reported as "you have no projects yet".
     expect(screen.queryByTestId('getting-started-empty')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
 
     screen.getByRole('button', { name: /retry/i }).click();
     expect(refetchProjects).toHaveBeenCalled();
   });
 
   it('keeps existing projects visible and disables retry during a failed refresh', () => {
-    renderTab({ projects: [makeProject({ directory: '/tmp/alpha' })], projectsError: 'Refresh failed', projectsLoading: false, projectsFetching: true });
+    renderTab({ projects: [makeProject({ directory: '/tmp/alpha' })], projectsLoaded: true, projectsError: 'Refresh failed', projectsFetching: true });
     expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
     expect(screen.getByText('tmp/alpha')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeDisabled();
@@ -169,8 +164,45 @@ describe('ProjectsTab', () => {
   });
 
   it('shows the getting-started state only when the query succeeded and is empty', () => {
-    renderTab({ projects: [] });
+    renderTab({ projects: [] }, '/projects?q=%20%20&sort=-sessions&remoteId=build');
     expect(screen.getByTestId('getting-started-empty')).toBeInTheDocument();
+  });
+
+  it('keeps a previously loaded empty list visible when refresh fails', () => {
+    renderTab({ projects: [], projectsLoaded: true, projectsError: 'Refresh failed' });
+    expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
+    expect(screen.getByTestId('getting-started-empty')).toBeVisible();
+  });
+
+  it('restores the search from the URL and shows matches again when the field is cleared', () => {
+    renderTab({ projects: [makeProject({ directory: '/alpha' }), makeProject({ directory: '/beta' })] }, '/projects?q=alpha');
+    const search = screen.getByRole('searchbox', { name: 'Search projects' });
+    expect(search).toHaveValue('alpha');
+    expect(screen.queryByRole('link', { name: /beta/ })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'beta' } });
+    expect(screen.queryByRole('link', { name: /alpha/ })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(screen.getByRole('link', { name: /alpha/ })).toBeVisible();
+    expect(screen.getByRole('link', { name: /beta/ })).toBeVisible();
+  });
+
+  it('offers to clear a directory-only filter when nothing matches', () => {
+    renderTab({ projects: [makeProject({ directory: '/alpha' })], dirScope: '/missing' }, '/projects?dir=%2Fmissing');
+    expect(screen.getByRole('heading', { name: 'No matching projects' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeVisible();
+  });
+
+  it('clears an unmatched search and restores the list', () => {
+    renderTab({ projects: [makeProject({ directory: '/alpha' })] }, '/projects?q=missing');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByRole('searchbox', { name: 'Search projects' })).toHaveValue('');
+    expect(screen.getByRole('link', { name: /alpha/ })).toBeVisible();
+  });
+
+  it('does not offer to clear filters when only an unused local project exists', () => {
+    renderTab({ projects: [makeProject({ sessionCount: 0 })] });
+    expect(screen.getByText('No projects found')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
   });
 
   it('lists projects when the query succeeded with data', () => {

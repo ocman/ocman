@@ -78,6 +78,7 @@ export function DashboardLayout() {
     hasSessionsOutsideRange: checkAllTime && !!allTimeProbe.data?.length,
     projectsLoading,
     projectsFetching,
+    projectsLoaded: projectsQ.data !== undefined,
     projectsError,
     loadSessions,
     refetchProjects,
