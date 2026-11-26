@@ -67,17 +67,22 @@ func (m *Module) put(ctx context.Context, l Link) error {
 }
 
 func (m *Module) links(ctx context.Context, platform, id string) ([]Link, error) {
+	if platform != "" {
+		return m.queryLinks(ctx, " WHERE platform=? AND session_id=?", platform, id)
+	}
+	return m.queryLinks(ctx, "")
+}
+
+func (m *Module) platformLinks(ctx context.Context, platform string) ([]Link, error) {
+	return m.queryLinks(ctx, " WHERE platform=?", platform)
+}
+
+func (m *Module) queryLinks(ctx context.Context, where string, args ...any) ([]Link, error) {
 	result := []Link{}
 	if m.d.DB == nil {
 		return result, nil
 	}
-	query := `SELECT payload FROM session_pull_request`
-	args := []any{}
-	if platform != "" {
-		query += ` WHERE platform=? AND session_id=?`
-		args = append(args, platform, id)
-	}
-	query += ` ORDER BY host,repo,number`
+	query := `SELECT payload FROM session_pull_request` + where + ` ORDER BY host,repo,number,session_id`
 	rows, err := m.d.DB.SQL().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

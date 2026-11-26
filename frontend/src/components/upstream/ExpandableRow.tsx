@@ -18,6 +18,7 @@ interface ExpandableRowProps {
   assignees?: ForgeUser[] | null;
   url: string;
   host: string;
+  repo?: string;
   directory: string | undefined;
   remoteId: string;
   remote: string;
@@ -43,6 +44,7 @@ export function ExpandableRow({
   assignees,
   url,
   host,
+  repo,
   directory,
   remoteId,
   remote,
@@ -118,6 +120,7 @@ export function ExpandableRow({
           </div>
           {detailAfterBody}
           <LaunchSplitButton
+            repository={host && repo ? { host, repo } : undefined}
             directory={directory}
             remoteId={remoteId}
             remote={remote}

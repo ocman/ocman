@@ -784,15 +784,15 @@ sequenceDiagram
     actor User
     participant FE as Frontend RightPanel
     participant H as ocman backend
-    participant Host as owner hostsvc.Host
+    participant Inventory as Hub project inventory
     participant F as forge package
     participant GH as github.com
     participant FJ as forgejo host
 
     User->>FE: Opens project
-    FE->>H: GET /api/project/upstreams?dir=...&remoteId=owner
-    H->>Host: ProjectUpstreams(dir)
-    Host-->>H: parsed remote candidates
+    FE->>H: GET /api/project/upstreams?dir=...&remoteId=owner&sidebar=1
+    H->>Inventory: Find synced checkout by owner and directory
+    Inventory-->>H: credential-free remote candidates
     H->>F: classify with hub forge config
     F-->>H: [origin(github), internal(forgejo)]
     H-->>FE: {upstreams: [...]}
@@ -800,12 +800,12 @@ sequenceDiagram
 
     User->>FE: Clicks "PRs & Issues" icon
     par origin
-        FE->>H: GET /api/project/prs?dir=...&remoteId=owner&remote=origin
+        FE->>H: GET /api/project/prs?dir=...&remoteId=owner&remote=origin&sidebar=1
         H->>GH: GET /repos/alice/myproj/pulls
         GH-->>H: [...]
         H-->>FE: {prs: [...]}
     and internal
-        FE->>H: GET /api/project/prs?dir=...&remoteId=owner&remote=internal
+        FE->>H: GET /api/project/prs?dir=...&remoteId=owner&remote=internal&sidebar=1
         H->>FJ: GET /api/v1/repos/infra/myproj/pulls
         FJ-->>H: [...]
         H-->>FE: {prs: [...]}

@@ -16,12 +16,13 @@ import (
 // checks uses the saved repository identity, not the session checkout remote.
 // Without sha it reads the PR's current head commit from the forge.
 func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
-	t, ok := m.d.Target(w, r, r.PathValue("id"))
-	if !ok {
-		return
-	}
-	if m.forward(w, r, t, "checks") {
-		return
+	t, remote := remoteSidebarTarget(r)
+	if !remote {
+		var ok bool
+		t, ok = m.d.Target(w, r, r.PathValue("id"))
+		if !ok || m.forward(w, r, t, "checks") {
+			return
+		}
 	}
 	q := r.URL.Query()
 	number, err := strconv.Atoi(q.Get("number"))
@@ -31,18 +32,27 @@ func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "A positive PR number and an optional hexadecimal commit ID are required", http.StatusBadRequest)
 		return
 	}
-	m.mu.Lock()
-	links, err := m.links(r.Context(), t.Platform, t.SessionID)
-	m.mu.Unlock()
-	if err != nil {
-		http.Error(w, "Could not load linked PRs", http.StatusInternalServerError)
-		return
+	var links []Link
+	if remote {
+		var ok bool
+		links, ok = m.remoteSidebarLinks(w, t)
+		if !ok {
+			return
+		}
+	} else {
+		m.mu.Lock()
+		links, err = m.links(r.Context(), t.Platform, t.SessionID)
+		m.mu.Unlock()
+		if err != nil {
+			http.Error(w, "Could not load linked PRs", http.StatusInternalServerError)
+			return
+		}
 	}
 	for _, l := range links {
 		if l.Number != number || l.Remote.Host != q.Get("host") || l.Remote.Repo != q.Get("repo") {
 			continue
 		}
-		if m.checkOwner(r.Context(), l) != nil {
+		if !remote && m.checkOwner(r.Context(), l) != nil {
 			http.Error(w, "Session owner unavailable", http.StatusServiceUnavailable)
 			return
 		}

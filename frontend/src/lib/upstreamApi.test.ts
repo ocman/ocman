@@ -343,6 +343,7 @@ describe('upstreamApi', () => {
 
     for (const [url] of fetchSpy.mock.calls) {
       expect(String(url)).toContain('remoteId=remote-1');
+      expect(String(url)).toContain('sidebar=1');
     }
   });
 

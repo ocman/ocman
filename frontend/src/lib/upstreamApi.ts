@@ -113,6 +113,7 @@ export interface HandleRequest {
   dir: string;
   remoteId: string;
   remote: string;
+  repository?: { host: string; repo: string };
   type: 'pr' | 'issue';
   number: number;
   mode: 'session' | 'worktree';
@@ -144,7 +145,7 @@ export interface PromptTemplates {
 // containing dir. Returns [] when the directory has no recognised
 // upstream — the caller hides the pane in that case.
 export async function fetchUpstreams(dir: string, remoteId: string, signal?: AbortSignal): Promise<Upstream[]> {
-  const url = `/api/project/upstreams?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}`;
+  const url = `/api/project/upstreams?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}&sidebar=1`;
   const resp = await fetchResponse(url, { signal });
   if (!resp.ok) {
     // 404 = not a git repo; treat as "no upstreams" rather than an error.
@@ -177,6 +178,7 @@ export function fetchIssues(opts: ListOptions): Promise<ListIssuesResponse> {
 
 function fetchList<T>(kind: 'prs' | 'issues', opts: ListOptions): Promise<T> {
   const q = new URLSearchParams({
+    sidebar: '1',
     dir: opts.dir,
     remoteId: opts.remoteId,
     remote: opts.remote,
@@ -201,7 +203,7 @@ export async function fetchPRMergeability(opts: {
   signal: AbortSignal;
   refresh?: boolean;
 }): Promise<PRMergeability> {
-  const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
+  const q = new URLSearchParams({ sidebar: '1', dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote, number: String(opts.number) });
   if (opts.refresh) q.set('refresh', '1');
   return forgeRequest<PRMergeability>(`/api/project/pr-mergeability?${q}`, { signal: opts.signal });
 }
@@ -217,6 +219,7 @@ export async function fetchPRChecks(opts: {
   refresh?: boolean;
 }): Promise<PRChecks> {
   const q = new URLSearchParams({
+    sidebar: '1',
     dir: opts.dir,
     remoteId: opts.remoteId,
     remote: opts.remote,
@@ -232,7 +235,7 @@ export async function fetchForgeUser(opts: {
   remote: string;
   signal?: AbortSignal;
 }): Promise<{ login: string; host: string } | null> {
-  const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote });
+  const q = new URLSearchParams({ sidebar: '1', dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote });
   const resp = await fetchResponse(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
   if (resp.status === 401) {
     // A forge-level 401 always carries an error envelope; a bare 401 is

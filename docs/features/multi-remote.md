@@ -154,9 +154,12 @@ list with its host badge.
   nothing is created until the first prompt. Use the composer's machine
   selector before that prompt to start it on another machine that has the
   project instead.
-- **PRs and issues.** The project sidebar sends the owning `remoteId` for
-  upstream detection, lists, checks, identity lookups, branch highlighting,
-  and session/worktree launches. Repository work runs on the owner.
+- **PRs and issues.** The sidebar uses the hub's synced checkout and linked-PR
+  data. The hub fetches PRs, issues, and checks with its own forge credentials.
+  Branch highlighting uses the session's reported branch. Opening or refreshing
+  the sidebar does not ask the remote to inspect Git or contact the forge.
+  Upgrade both instances for synced sidebar data. Repository work still runs
+  on the owner.
 - **Session PR watches.** Linked PRs, polling checkpoints and pending updates
   live on the session's owning machine. Linking, watching, stopping a watch,
   checks and feedback drafts behave the same through the hub or directly on
@@ -169,6 +172,7 @@ list with its host badge.
   `StreamSessionChanges` and then browser SSE. The connection supervisor owns
   and joins the stream, retries transient stream failures and reconciles known
   session rows on attachment. Older owners without this RPC retain polling.
+
 - **Background tasks.** The task page and active counter include application
   work on this machine and connected remotes, with machine badges on each row.
   Progress and history stay on the machine doing the work; the hub reads them
@@ -187,6 +191,15 @@ list with its host badge.
 - **Relaunch.** When a send finds a session's OpenCode instance gone, the
   instance is relaunched on the machine that owns the session, never on
   another machine that happens to have the same directory.
+
+```mermaid
+flowchart LR
+    Browser -->|Sidebar reads| Hub
+    Owner -->|Checkout and link snapshots| Hub
+    Hub -->|PR metadata and CI| Forge
+    Hub -->|Launches and watch changes| Owner
+    Owner -->|Background watch polling| Forge
+```
 
 New conversations appear alongside sessions in the sidebar immediately, at the
 top of their project in grouped view. You can prepare several, switch between

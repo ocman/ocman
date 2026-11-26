@@ -19,7 +19,7 @@ describe('usePRMergeability', () => {
     const signal = new AbortController().signal;
     expect(await api.fetchPRMergeability({ dir: '/repo with spaces', remoteId: 'r-one', remote: 'origin', number: 42, signal })).toEqual({ mergeable: false, approved: true });
     const [url, options] = fetch.mock.calls[0];
-    expect(url).toBe('/api/project/pr-mergeability?dir=%2Frepo+with+spaces&remoteId=r-one&remote=origin&number=42');
+    expect(url).toBe('/api/project/pr-mergeability?sidebar=1&dir=%2Frepo+with+spaces&remoteId=r-one&remote=origin&number=42');
     expect(options.signal).toBe(signal);
   });
 

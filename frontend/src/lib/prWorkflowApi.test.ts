@@ -11,8 +11,8 @@ it('uses the hub credential routes without putting secrets in URLs', () => {
   expect(postJSON).toHaveBeenCalledWith('/api/source-control/credentials', { host: 'code.example.com', provider: 'forgejo', token: 'secret' }, { parseJSON: false });
 });
 it('qualifies session reads and mutations by platform and handles empty unlink responses', () => {
-  prWorkflowApi.links('s/1', 'r-box:opencode'); expect(fetchJSON).toHaveBeenCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode');
-  prWorkflowApi.links('s/1', 'r-box:opencode', true); expect(fetchJSON).toHaveBeenLastCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode&refresh=true');
+  prWorkflowApi.links('s/1', 'r-box:opencode'); expect(fetchJSON).toHaveBeenCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode&sidebar=1');
+  prWorkflowApi.links('s/1', 'r-box:opencode', true); expect(fetchJSON).toHaveBeenLastCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode&sidebar=1&refresh=true');
   prWorkflowApi.change('s1', 'r-box:opencode', { action: 'watch', number: 42, host: 'github.com', repo: 'team/repo' });
   expect(postJSON).toHaveBeenLastCalledWith('/api/session/s1/pull-requests?platform=r-box%3Aopencode', expect.objectContaining({ action: 'watch' }), { parseJSON: true });
   prWorkflowApi.change('s1', 'r-box:opencode', { action: 'unlink', number: 42 });
@@ -34,7 +34,7 @@ it('loads checks by saved repository and session identity, not checkout remote',
   const link = { platform: 'r-box:opencode', sessionId: 's/1', number: 42, remote: { host: 'github.com', repo: 'other/project' }, pr: { headSha: 'abcdef' } } as PRLink;
   for (const refresh of [false, true]) {
     prWorkflowApi.checks(link, signal, refresh);
-    expect(fetchJSON).toHaveBeenLastCalledWith(`/api/session/s%2F1/pull-request-checks?platform=r-box%3Aopencode&host=github.com&repo=other%2Fproject&number=42&sha=abcdef${refresh ? '&refresh=true' : ''}`, signal);
+    expect(fetchJSON).toHaveBeenLastCalledWith(`/api/session/s%2F1/pull-request-checks?sidebar=1&platform=r-box%3Aopencode&host=github.com&repo=other%2Fproject&number=42&sha=abcdef${refresh ? '&refresh=true' : ''}`, signal);
   }
   prWorkflowApi.checks({ ...link, pr: { ...link.pr, headSha: undefined } }, signal);
   expect(fetchJSON).toHaveBeenLastCalledWith(expect.stringContaining('sha='), signal);

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ocman/ocman/internal/forge"
@@ -54,5 +55,36 @@ func TestPRListIncludesLinkedSessions(t *testing.T) {
 	lookupErr = errors.New("owner offline")
 	if w = get(); w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("lookup failure=%d %s", w.Code, w.Body)
+	}
+}
+
+func TestRemoteSidebarUsesInventoryAndCachedSessionLinks(t *testing.T) {
+	m := NewModule(Deps{
+		Owner: func(http.ResponseWriter, string, string) (hostsvc.Host, bool) {
+			t.Fatal("sidebar tried to resolve the live owner")
+			return nil, false
+		},
+		SidebarUpstreams: func(owner, dir string) ([]forge.Remote, bool) {
+			return githubUpstreams(dir).Remotes, owner == "box" && dir == "/repo"
+		},
+		ResolveForge: func(forge.Remote) (forge.Forge, bool) { return sessionListForge{}, true },
+		SidebarPRSessions: func(context.Context, string, string, string) (map[int][]SessionRef, error) {
+			return map[int][]SessionRef{42: {{Platform: "r-box:opencode", SessionID: "s1"}}}, nil
+		},
+	})
+	for _, tc := range []struct {
+		query string
+		code  int
+		body  string
+	}{
+		{"upstreams?dir=/repo&remoteId=box", 200, `"repo":"alice/myproj"`},
+		{"prs?dir=/repo&remoteId=box&remote=origin", 200, `"sessionId":"s1"`},
+		{"prs?dir=/other&remoteId=box&remote=origin", 503, "metadata unavailable"},
+	} {
+		w := httptest.NewRecorder()
+		moduletest.Mount(m).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/project/"+tc.query+"&sidebar=1", nil))
+		if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.body) {
+			t.Errorf("%s = %d %s", tc.query, w.Code, w.Body)
+		}
 	}
 }

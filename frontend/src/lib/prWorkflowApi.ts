@@ -14,10 +14,10 @@ export const prWorkflowApi = {
   connections: () => fetchJSON<{ connections: ForgeConnection[] }>('/api/source-control'),
   saveCredential: (host: string, provider: RemoteType, token: string) => postJSON<void>('/api/source-control/credentials', { host, provider, token }, { parseJSON: false }),
   recheck: () => postJSON<void>('/api/source-control/refresh', {}, { parseJSON: false }),
-  links: (id: string, platform: string, refresh = false) => fetchJSON<{ pullRequests: PRLink[] }>(`${target(id)}/pull-requests${query(platform)}${refresh ? '&refresh=true' : ''}`),
+  links: (id: string, platform: string, refresh = false) => fetchJSON<{ pullRequests: PRLink[] }>(`${target(id)}/pull-requests${query(platform)}&sidebar=1${refresh ? '&refresh=true' : ''}`),
   background: (id: string, platform: string, signal: AbortSignal) => fetchJSON<{ pullRequests: PRLink[] }>(`${target(id)}/pull-requests${query(platform)}&background=true`, signal),
   checks: (link: PRLink, signal: AbortSignal, refresh = false) => {
-    const q = new URLSearchParams({ platform: link.platform, host: link.remote.host, repo: link.remote.repo, number: String(link.number), sha: link.pr.headSha ?? '' });
+    const q = new URLSearchParams({ sidebar: '1', platform: link.platform, host: link.remote.host, repo: link.remote.repo, number: String(link.number), sha: link.pr.headSha ?? '' });
     if (refresh) q.set('refresh', 'true');
     return fetchJSON<PRChecks>(`${target(link.sessionId)}/pull-request-checks?${q}`, signal);
   },

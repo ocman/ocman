@@ -47,6 +47,11 @@ func (p *remotePlatform) publishSessionChange(id string) {
 func (m *Manager) waitForDropWithSessionChanges(ctx context.Context, mr *managedRemote, adapters []*remotePlatform) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
+	prDone := make(chan struct{})
+	go func() {
+		defer close(prDone)
+		syncPRSidebar(ctx, adapters)
+	}()
 	go func() {
 		defer close(done)
 		for ctx.Err() == nil {
@@ -59,6 +64,7 @@ func (m *Manager) waitForDropWithSessionChanges(ctx context.Context, mr *managed
 	mr.conn.WaitForDrop(ctx)
 	cancel()
 	<-done
+	<-prDone
 }
 
 func (m *Manager) receiveSessionChanges(ctx context.Context, mr *managedRemote, adapters []*remotePlatform) error {

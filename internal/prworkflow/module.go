@@ -36,7 +36,8 @@ type Deps struct {
 	Ready   func(context.Context, Target) bool
 	Now     func() time.Time
 	// Remote resolves only remote session owners. Local targets return nil.
-	Remote func(Target) (platforms.PullRequestWorkflow, error)
+	Remote       func(Target) (platforms.PullRequestWorkflow, error)
+	SidebarLinks func(platform string) ([]platforms.PullRequestSidebarLink, bool)
 	// Changed publishes an invalidation after a successful durable mutation.
 	// It must not acquire the module mutex, which may still be held.
 	Changed func(platform, sessionID string)
@@ -57,6 +58,10 @@ func (m *Module) Routes(r module.Router) {
 }
 
 func (m *Module) list(w http.ResponseWriter, r *http.Request) {
+	if t, remote := remoteSidebarTarget(r); remote {
+		m.listRemoteSidebar(w, r, t)
+		return
+	}
 	t, ok := m.d.Target(w, r, r.PathValue("id"))
 	if !ok {
 		return

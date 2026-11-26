@@ -26,7 +26,8 @@ func (s *Server) prWorkflowModule() *prworkflow.Module {
 			ProjectHandler: s.projectForgeModule().PRToolHandler(),
 			FindSessions:   s.prToolSessions,
 			DB:             s.stateDB, Target: s.prTarget, Owner: s.prOwner, ResolveForge: s.resolveForge, Ready: s.prWatchReady,
-			Remote: s.remotePRWorkflow,
+			Remote:       s.remotePRWorkflow,
+			SidebarLinks: s.cachedPRSidebarLinks,
 			Changed: func(platform, sessionID string) {
 				s.broadcastSessionPatch(platform, sessionID, nil)
 			},

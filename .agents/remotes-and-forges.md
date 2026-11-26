@@ -55,10 +55,12 @@ Never change session directories or owners to merge their display groups.
 ## PR and issue pane
 
 `internal/projectforge` owns all project forge endpoints. Every request requires
-`remoteId`, with `local` for the hub. Detect repositories and fetch cross-fork
-refs on the owner Host. Forge metadata uses the hub's clients; launches use the
-owner's compound platform. Keep archive/quick settings in `projectsmod` and
-session start in `sessionlifecycle`.
+`remoteId`, with `local` for the hub. Browser reads use the hub's synced
+remote project inventory and display-only PR link snapshots. Never fall back
+to a live owner read from those routes. Forge metadata uses hub clients.
+Revalidate the repository and fetch cross-fork refs on the owner Host for
+launches, using the owner's compound platform. Keep archive/quick settings in
+`projectsmod` and session start in `sessionlifecycle`.
 
 - Keep the pane available with an empty state if no supported remote exists.
   Forgejo classification uses configured hub hosts. Auth uses `GITHUB_TOKEN`,

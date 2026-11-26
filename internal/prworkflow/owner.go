@@ -140,6 +140,8 @@ func (m *Module) Operation(ctx context.Context, platform string, req platforms.P
 	r.URL.RawQuery = q.Encode()
 	r.SetPathValue("id", req.SessionID)
 	switch req.Operation {
+	case "sidebar-links":
+		m.sidebarLinksOperation(w, r, platform)
 	case "linked-sessions":
 		m.linkedSessionsOperation(w, r, platform)
 	case "counts":

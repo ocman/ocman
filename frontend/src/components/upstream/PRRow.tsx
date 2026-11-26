@@ -75,6 +75,7 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
       assignees={pr.assignees}
       url={pr.url}
       host={pr.host}
+      repo={pr.repo}
       directory={directory}
       remoteId={remoteId}
       remote={remote}

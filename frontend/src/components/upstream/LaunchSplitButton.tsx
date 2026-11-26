@@ -10,6 +10,7 @@ interface LaunchSplitButtonProps {
   directory: string | undefined;
   remoteId: string;
   remote: string;
+  repository?: { host: string; repo: string };
   type: 'pr' | 'issue';
   number: number;
   crossFork: boolean;
@@ -33,6 +34,7 @@ export function LaunchSplitButton({
   directory,
   remoteId,
   remote,
+  repository,
   type,
   number,
   crossFork,
@@ -62,6 +64,7 @@ export function LaunchSplitButton({
         dir: directory,
         remoteId,
         remote,
+        ...(repository ? { repository } : {}),
         type,
         number,
         mode,

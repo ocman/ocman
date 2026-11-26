@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/ocman/ocman/internal/platforms"
 	pb "github.com/ocman/ocman/internal/remote/proto"
@@ -46,6 +47,15 @@ func (p *remotePlatform) PullRequestOperation(ctx context.Context, req platforms
 	response, err := jsonCall(ctx, p, "PullRequestOperation", req.SessionID, req, &platforms.PullRequestResponse{})
 	if err != nil {
 		return platforms.PullRequestResponse{}, err
+	}
+	if response.Status >= http.StatusOK && response.Status < http.StatusMultipleChoices {
+		switch req.Operation {
+		case "change", "created", "import":
+			select {
+			case p.prSidebar.refresh <- struct{}{}:
+			default:
+			}
+		}
 	}
 	return *response, nil
 }

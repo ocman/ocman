@@ -206,11 +206,10 @@ func (m *Module) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	host, ok := m.Owner(w, dir, remoteID)
+	remotes, err, ok := m.readUpstreams(w, r, dir, remoteID)
 	if !ok {
 		return
 	}
-	_, remotes, err := m.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
 		if httpx.WriteCancellation(w, "failed to detect upstreams", err) {
 			return
@@ -228,4 +227,22 @@ func (m *Module) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 		remotes = []forge.Remote{}
 	}
 	httpx.WriteJSON(w, map[string]interface{}{"upstreams": remotes})
+}
+
+func (m *Module) readUpstreams(w http.ResponseWriter, r *http.Request, dir, remoteID string) ([]forge.Remote, error, bool) {
+	if remoteID != "local" && r.URL.Query().Get("sidebar") == "1" {
+		if m.SidebarUpstreams != nil {
+			if rows, ok := m.SidebarUpstreams(remoteID, dir); ok {
+				return m.classify(rows), nil, true
+			}
+		}
+		http.Error(w, "PR sidebar checkout metadata unavailable", http.StatusServiceUnavailable)
+		return nil, nil, false
+	}
+	host, ok := m.Owner(w, dir, remoteID)
+	if !ok {
+		return nil, nil, false
+	}
+	_, remotes, err := m.detectUpstreams(r.Context(), host, dir)
+	return remotes, err, true
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/ocman/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 // Message represents an OpenCode message.
@@ -269,16 +270,17 @@ type ProjectStats struct {
 	MergedIntoDirectory string `json:"mergedIntoDirectory,omitempty"`
 	MergedIntoRemoteID  string `json:"mergedIntoRemoteId,omitempty"`
 
-	ProjectKey     string   `json:"projectKey,omitempty"`
-	UpstreamKeys   []string `json:"upstreamKeys,omitempty"`
-	UpstreamOrigin string   `json:"upstreamOrigin,omitempty"`
-	Directory      string   `json:"directory"`
-	SessionCount   int      `json:"sessionCount"`
-	MessageCount   int      `json:"messageCount"`
-	LastUsed       int64    `json:"lastUsed"`
-	TotalTokensIn  int64    `json:"totalTokensIn"`
-	TotalTokensOut int64    `json:"totalTokensOut"`
-	TotalCost      float64  `json:"totalCost"`
+	ProjectKey     string         `json:"projectKey,omitempty"`
+	UpstreamKeys   []string       `json:"upstreamKeys,omitempty"`
+	UpstreamOrigin string         `json:"upstreamOrigin,omitempty"`
+	ForgeRemotes   []forge.Remote `json:"forgeRemotes,omitempty"`
+	Directory      string         `json:"directory"`
+	SessionCount   int            `json:"sessionCount"`
+	MessageCount   int            `json:"messageCount"`
+	LastUsed       int64          `json:"lastUsed"`
+	TotalTokensIn  int64          `json:"totalTokensIn"`
+	TotalTokensOut int64          `json:"totalTokensOut"`
+	TotalCost      float64        `json:"totalCost"`
 	// Archived is set by the server layer (not the DB query) from
 	// ocman's own state.db: true when the project's folded root is
 	// archived and no session is newer than the archive time.

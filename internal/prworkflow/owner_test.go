@@ -61,6 +61,33 @@ func ownerLink(t *testing.T, owner *fixture) Link {
 	return links[0]
 }
 
+func TestSidebarLinkedPRReadsDoNotCallOwner(t *testing.T) {
+	hub, owner, bridge := bridgeFixtures(t)
+	hub.link(t)
+	owner.f.pr.Title = "Owner metadata must not be read"
+	hub.f.pr.Title = "Metadata from hub"
+	hub.f.checks.State = forge.CIStateSuccess
+	response := owner.m.Operation(t.Context(), "opencode", platforms.PullRequestRequest{Operation: "sidebar-links"})
+	var snapshot []platforms.PullRequestSidebarLink
+	if err := json.Unmarshal(response.Body, &snapshot); err != nil || len(snapshot) != 1 {
+		t.Fatalf("snapshot=%s err=%v", response.Body, err)
+	}
+	bridge.err = platforms.ErrRemoteOffline
+	const sidebar = "?platform=r-box:opencode&sidebar=1"
+	hub.request(t, "pull-requests"+sidebar, "", http.StatusServiceUnavailable)
+	hub.request(t, "pull-request-checks"+sidebar+"&number=0", "", http.StatusBadRequest)
+	hub.m.d.SidebarLinks = func(string) ([]platforms.PullRequestSidebarLink, bool) { return snapshot, true }
+	listed := hub.request(t, "pull-requests"+sidebar+"&refresh=true", "", http.StatusOK)
+	if !strings.Contains(listed.Body.String(), "Metadata from hub") || !strings.Contains(listed.Body.String(), "r-box:opencode") {
+		t.Fatalf("links = %s", listed.Body)
+	}
+	checks := hub.request(t, "pull-request-checks"+sidebar+"&number=42&host=github.com&repo=team/repo&sha=abcd", "", http.StatusOK)
+	if !strings.Contains(checks.Body.String(), `"state":"success"`) {
+		t.Fatalf("checks = %s", checks.Body)
+	}
+	hub.request(t, "pull-request-checks"+sidebar+"&number=42&host=github.com&repo=other/repo&sha=abcd", "", http.StatusNotFound)
+}
+
 func TestOwnerWorkflowHasSameLocalAndRemoteActions(t *testing.T) {
 	hub, owner, bridge := bridgeFixtures(t)
 	hub.link(t)

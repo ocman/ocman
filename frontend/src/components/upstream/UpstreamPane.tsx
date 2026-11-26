@@ -42,6 +42,7 @@ interface UpstreamPaneProps {
    * `directory`. Changing it alone never reloads the lists.
    */
   currentDirectory?: string;
+  sessionBranch?: string;
   /**
    * False while the active session is unresolved: the retained list stays
    * visible but launches are disabled so they can't target the previous
@@ -86,6 +87,7 @@ export function UpstreamPane({
   directory,
   projectId,
   currentDirectory = directory,
+  sessionBranch,
   actionsEnabled = true,
   remoteId,
   launchPlatform,
@@ -96,8 +98,8 @@ export function UpstreamPane({
   onLoadingChange,
   onSummaryChange,
 }: UpstreamPaneProps) {
-  const { infos: gitInfos } = useGitInfo(currentDirectory && upstreams.length > 0 ? [currentDirectory] : [], remoteId);
-  const currentBranch = currentDirectory ? gitInfos[currentDirectory]?.branch : undefined;
+  const { infos: gitInfos } = useGitInfo(remoteId === 'local' && currentDirectory && upstreams.length > 0 ? [currentDirectory] : [], remoteId);
+  const currentBranch = (currentDirectory && gitInfos[currentDirectory]?.branch) || sessionBranch;
   const launchDirectory = actionsEnabled ? currentDirectory : undefined;
   const linkScope = JSON.stringify([launchPlatform, sessionId]);
   const [loadedLinks, setLoadedLinks] = useState({ scope: '', links: EMPTY_LINKS });

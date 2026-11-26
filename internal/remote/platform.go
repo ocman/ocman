@@ -35,12 +35,13 @@ type remotePlatform struct {
 	nameFn          func() string
 	pluginReference func(context.Context, string) (string, error)
 
-	mu       sync.RWMutex
-	caps     platforms.Capabilities
-	capsSet  bool
-	owned    map[string]struct{} // session IDs last seen owned by this remote
-	lastSess []db.Session        // last-known sessions for offline stale serving (Phase 5)
-	sink     platforms.SessionEventSink
+	mu        sync.RWMutex
+	caps      platforms.Capabilities
+	capsSet   bool
+	owned     map[string]struct{} // session IDs last seen owned by this remote
+	lastSess  []db.Session        // last-known sessions for offline stale serving (Phase 5)
+	prSidebar prSidebarCache
+	sink      platforms.SessionEventSink
 }
 
 // newRemotePlatform builds an adapter for a remote's base platform.
@@ -64,6 +65,7 @@ func newRemotePlatform(conn *RemoteConn, base string, nameFn func() string) *rem
 		sourceKeys:     sourceKeys,
 		nameFn:         nameFn,
 		owned:          make(map[string]struct{}),
+		prSidebar:      prSidebarCache{refresh: make(chan struct{}, 1)},
 	}
 }
 

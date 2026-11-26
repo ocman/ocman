@@ -217,6 +217,7 @@ export function Pane({
               onLinkPullRequest={session?.id === sessionId && platformId ? () => setLinkTarget(sessionKey) : undefined}
               projectId={upstreamTarget.projectId}
               currentDirectory={directory}
+              sessionBranch={session?.id === sessionId ? session?.branch : undefined}
               actionsEnabled={session?.id === sessionId && !!directory}
               remoteId={upstreamTarget.remoteId} launchPlatform={platformId}
               upstreams={upstreams}

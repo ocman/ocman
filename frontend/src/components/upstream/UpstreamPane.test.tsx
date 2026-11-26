@@ -197,15 +197,22 @@ describe('UpstreamPane owner-scoped resources', () => {
   });
 
   it('uses one git-info poll for every upstream group', () => {
-    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
+    render(<UpstreamPane directory="/repo" remoteId="local" upstreams={upstreams} />);
 
     expect(useGitInfo).toHaveBeenCalledTimes(1);
-    expect(useGitInfo).toHaveBeenCalledWith(['/repo'], 'box');
+    expect(useGitInfo).toHaveBeenCalledWith(['/repo'], 'local');
+  });
+
+  it('highlights the remote session branch without polling Git on the owner', () => {
+    upstreamListMock.items = [{ number: 12, title: 'Patch', status: 'open', branch: 'topic', labels: [] }];
+    render(<UpstreamPane directory="/repo" remoteId="box" sessionBranch="topic" upstreams={[upstreams[0]]} />);
+    expect(screen.getByTitle('Matches your current branch: topic')).toBeInTheDocument();
+    expect(useGitInfo).toHaveBeenCalledWith([], 'box');
   });
 
   it('does not poll git info without a supported upstream', () => {
-    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={[]} />);
-    expect(useGitInfo).toHaveBeenCalledWith([], 'box');
+    render(<UpstreamPane directory="/repo" remoteId="local" upstreams={[]} />);
+    expect(useGitInfo).toHaveBeenCalledWith([], 'local');
   });
 
   it('activates with the keyboard and preserves each tab’s filters across remounts', async () => {

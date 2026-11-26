@@ -24,8 +24,12 @@ func Detect(ctx context.Context, repoRoot string) ([]Remote, error) {
 	if err != nil {
 		return nil, fmt.Errorf("git remote -v: %w", err)
 	}
-	raw := parseGitRemoteV(out)
-	return classifyRemotes(raw), nil
+	return RemotesFromGitOutput(out), nil
+}
+
+// RemotesFromGitOutput extracts credential-free fetch identities from git remote -v.
+func RemotesFromGitOutput(out string) []Remote {
+	return classifyRemotes(parseGitRemoteV(out))
 }
 
 // rawRemote is one row of `git remote -v` (a name + url pair, with

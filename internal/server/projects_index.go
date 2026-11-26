@@ -284,6 +284,7 @@ func cloneProjectStats(projects []db.ProjectStats) []db.ProjectStats {
 	copy(cloned, projects)
 	for i := range cloned {
 		cloned[i].UpstreamKeys = slices.Clone(projects[i].UpstreamKeys)
+		cloned[i].ForgeRemotes = slices.Clone(projects[i].ForgeRemotes)
 	}
 	return cloned
 }

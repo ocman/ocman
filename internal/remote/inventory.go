@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/gitexec"
 	"github.com/ocman/ocman/internal/telemetry"
 )
@@ -51,6 +52,7 @@ type originCache struct {
 type cachedUpstreams struct {
 	origin  string
 	keys    []string
+	remotes []forge.Remote
 	expires time.Time
 	// gone marks a directory the last probe could not access (deleted
 	// checkout). While os.Stat keeps failing the entry is served from
@@ -139,7 +141,7 @@ func (c *originCache) discover(ctx context.Context, dir string) (cachedUpstreams
 		c.mu.Unlock()
 		return v, nil
 	}
-	v := cachedUpstreams{expires: time.Now().Add(upstreamTTL)}
+	v := cachedUpstreams{expires: time.Now().Add(upstreamTTL), remotes: forge.RemotesFromGitOutput(out)}
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 3 || fields[2] != "(fetch)" {
@@ -197,6 +199,7 @@ func EnrichProjectStats(ctx context.Context, stats []db.ProjectStats) error {
 		if stats[i].AssociatedDirectory != "" {
 			stats[i].UpstreamKeys = nil
 			stats[i].UpstreamOrigin = ""
+			stats[i].ForgeRemotes = nil
 			continue
 		}
 		g.Go(func() error {
@@ -206,6 +209,7 @@ func EnrichProjectStats(ctx context.Context, stats []db.ProjectStats) error {
 			}
 			stats[i].UpstreamKeys = slices.Clone(upstreams.keys)
 			stats[i].UpstreamOrigin = NormalizeUpstream(upstreams.origin)
+			stats[i].ForgeRemotes = slices.Clone(upstreams.remotes)
 			return nil
 		})
 	}
@@ -239,6 +243,7 @@ func projectIdentities(stats []db.ProjectStats) []ProjectIdentity {
 			Basename:            basenameOf(p.Directory),
 			Dir:                 p.Directory,
 			UpstreamKeys:        slices.Clone(p.UpstreamKeys),
+			ForgeRemotes:        slices.Clone(p.ForgeRemotes),
 			Platform:            p.Platform,
 			SessionCount:        p.SessionCount,
 			MessageCount:        p.MessageCount,

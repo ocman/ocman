@@ -26,10 +26,14 @@ const PRHeadFetchTimeout = 30 * time.Second
 
 // handleRequest is the body of POST /api/project/handle.
 type handleRequest struct {
-	Platform  string `json:"platform,omitempty"`
-	Dir       string `json:"dir"`
-	Remote    string `json:"remote"`
-	RemoteID  string `json:"remoteId,omitempty"`
+	Platform   string `json:"platform,omitempty"`
+	Dir        string `json:"dir"`
+	Remote     string `json:"remote"`
+	RemoteID   string `json:"remoteId,omitempty"`
+	Repository *struct {
+		Host string `json:"host"`
+		Repo string `json:"repo"`
+	} `json:"repository,omitempty"`
 	Type      string `json:"type"`             // "pr" | "issue"
 	Number    int    `json:"number"`           // PR or Issue number
 	Mode      string `json:"mode"`             // "session" | "worktree"
@@ -73,6 +77,10 @@ func (m *Module) handleHandle(w http.ResponseWriter, r *http.Request) {
 	rem, ok := findRemote(remotes, req.Remote)
 	if !ok {
 		http.Error(w, "remote not found among project upstreams", http.StatusNotFound)
+		return
+	}
+	if req.Repository != nil && (!strings.EqualFold(req.Repository.Host, rem.Host) || !strings.EqualFold(req.Repository.Repo, rem.Repo)) {
+		writeListError(w, http.StatusConflict, "upstream_changed", "The checkout's upstream changed. Refresh the PR sidebar before launching.")
 		return
 	}
 	f, ok := m.forgeFor(w, rem)

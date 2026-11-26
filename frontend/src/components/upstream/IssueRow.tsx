@@ -22,6 +22,7 @@ export function IssueRow({ issue, directory, remoteId, remote }: IssueRowProps) 
       assignees={issue.assignees}
       url={issue.url}
       host={issue.host}
+      repo={issue.repo}
       directory={directory}
       remoteId={remoteId}
       remote={remote}

@@ -42,8 +42,12 @@ func (m *Module) handlePRs(w http.ResponseWriter, r *http.Request) {
 		prs = filterPRsForUser(prs, opts.Mine)
 	}
 	linked := map[int][]SessionRef{}
-	if m.PRSessions != nil {
-		linked, err = m.PRSessions(r.Context(), r.URL.Query().Get("remoteId"), rem.Host, rem.Repo)
+	readLinks := m.PRSessions
+	if r.URL.Query().Get("sidebar") == "1" {
+		readLinks = m.SidebarPRSessions
+	}
+	if readLinks != nil {
+		linked, err = readLinks(r.Context(), r.URL.Query().Get("remoteId"), rem.Host, rem.Repo)
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{"remoteId": r.URL.Query().Get("remoteId"), "host": rem.Host, "repo": rem.Repo}).Warn("loading PR-linked sessions")
 			http.Error(w, "Could not load linked sessions", http.StatusServiceUnavailable)
@@ -216,11 +220,10 @@ func (m *Module) ownerRemote(w http.ResponseWriter, r *http.Request, dir, remote
 	if !ok {
 		return forge.Remote{}, false
 	}
-	host, ok := m.Owner(w, dir, remoteID)
+	remotes, err, ok := m.readUpstreams(w, r, dir, remoteID)
 	if !ok {
 		return forge.Remote{}, false
 	}
-	_, remotes, err := m.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
 		if httpx.WriteCancellation(w, "failed to detect upstreams", err) {
 			return forge.Remote{}, false

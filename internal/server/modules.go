@@ -132,14 +132,16 @@ func ModuleSchemas() []state.ModuleSchema {
 func (s *Server) projectForgeModule() *projectforge.Module {
 	return s.projectForgeMod.get(func() *projectforge.Module {
 		d := projectforge.Deps{
-			Owner:          s.resolveOwner,
-			ResolveForge:   s.resolveForge,
-			KnowsForgejo:   s.knowsForgejo,
-			CreatePlatform: s.createPlatform,
-			Registered:     s.platformRegistered,
-			Sessions:       s.sessions,
-			LinkPR:         s.linkLaunchedPR,
-			PRSessions:     s.prLinkedSessions,
+			Owner:             s.resolveOwner,
+			ResolveForge:      s.resolveForge,
+			KnowsForgejo:      s.knowsForgejo,
+			CreatePlatform:    s.createPlatform,
+			Registered:        s.platformRegistered,
+			Sessions:          s.sessions,
+			LinkPR:            s.linkLaunchedPR,
+			PRSessions:        s.prLinkedSessions,
+			SidebarPRSessions: s.sidebarPRLinkedSessions,
+			SidebarUpstreams:  s.sidebarUpstreams,
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB // untyped nil otherwise

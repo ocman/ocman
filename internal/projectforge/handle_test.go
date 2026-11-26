@@ -6,12 +6,29 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/platforms"
 )
+
+func TestLaunchRefusesChangedUpstream(t *testing.T) {
+	m := NewModule(Deps{Owner: func(http.ResponseWriter, string, string) (hostsvc.Host, bool) {
+		return &fakeHost{upstreams: githubUpstreams("/repo")}, true
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/project/handle", strings.NewReader(`{
+		"dir":"/repo","remote":"origin","remoteId":"box","type":"pr","number":42,"mode":"session",
+		"repository":{"host":"github.com","repo":"alice/previous"}
+	}`))
+	moduletest.Mount(m).ServeHTTP(w, r)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), `"code":"upstream_changed"`) {
+		t.Fatalf("launch = %d %s", w.Code, w.Body)
+	}
+}
 
 type worktreeHost struct {
 	hostsvc.Host

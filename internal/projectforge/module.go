@@ -5,9 +5,9 @@
 //
 // Every /api/project/* route takes an explicit owner (remoteId, "local" for
 // the hub); the prompt templates are hub-wide settings. The
-// owner's host detects the repository and fetches cross-fork heads; the hub
-// classifies remotes and talks to the forge with its own clients. The module
-// never runs git itself.
+// hub classifies remotes and talks to the forge with its own clients. The
+// browser sidebar uses synced remote metadata, while launches detect the live
+// repository and fetch cross-fork heads on the owner. The module never runs git.
 package projectforge
 
 import (
@@ -43,6 +43,8 @@ type Deps struct {
 	// Owner resolves the explicit owner, writing the rejection itself
 	// (503 remote_not_connected) when that remote is not connected.
 	Owner func(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool)
+	// SidebarUpstreams reads a remote checkout from the hub's project inventory.
+	SidebarUpstreams func(remoteID, dir string) ([]forge.Remote, bool)
 	// ResolveForge returns the hub's client for a classified remote.
 	ResolveForge func(forge.Remote) (forge.Forge, bool)
 	// KnowsForgejo reports whether the hub has a Forgejo client for host.
@@ -51,10 +53,11 @@ type Deps struct {
 	// reference's, else the owner's default, into its compound ID and base.
 	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested, model string) (id, base string, err error)
 	// Registered reports whether a platform adapter is registered.
-	Registered func(platformID string) bool
-	Sessions   Sessions
-	LinkPR     func(context.Context, string, string, string, string, string, int, *forge.PR)
-	PRSessions func(context.Context, string, string, string) (map[int][]SessionRef, error)
+	Registered        func(platformID string) bool
+	Sessions          Sessions
+	LinkPR            func(context.Context, string, string, string, string, string, int, *forge.PR)
+	PRSessions        func(context.Context, string, string, string) (map[int][]SessionRef, error)
+	SidebarPRSessions func(context.Context, string, string, string) (map[int][]SessionRef, error)
 }
 
 // SessionRef identifies a linked session using its owner-qualified platform.
