@@ -22,7 +22,8 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		return nil
 	}
 	msg := t.msgs[mid]
-	if t.snapshots[mid] && ev.Type != "session.tool.progress" {
+	liveText := ev.Type == "session.text.delta" && t.snapshots[mid] && openSnapshotText(msg)
+	if t.snapshots[mid] && ev.Type != "session.tool.progress" && !liveText {
 		started, _ := d["started"].(float64)
 		created, _ := obj(msg, "time")["created"].(float64)
 		if ev.Type == "session.step.started" && started > created {
@@ -223,6 +224,26 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		return emitPart(i)
 	}
 	return nil
+}
+
+// openSnapshotText reports whether a snapshot's latest text is still
+// streaming. v2 stores text only at text.ended, so deltas for an empty stored
+// item are not in the snapshot yet. The translator-local mark keeps the item
+// open after its first delta; a refreshed snapshot drops it.
+func openSnapshotText(msg map[string]any) bool {
+	content, _ := msg["content"].([]any)
+	for i := len(content) - 1; i >= 0; i-- {
+		item, _ := content[i].(map[string]any)
+		if str(item, "type") != "text" {
+			continue
+		}
+		if item["_liveText"] == true || (str(item, "text") == "" && obj(msg, "time")["completed"] == nil) {
+			item["_liveText"] = true
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // seed loads an assistant message that was already in flight when this

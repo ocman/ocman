@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -207,5 +208,57 @@ func TestEventsSnapshotRefreshAcceptsStoredMetadataWithoutLiveProgress(t *testin
 	}
 	if child != "stored-child" {
 		t.Fatalf("stored tool metadata lost on refresh: %q", child)
+	}
+}
+
+// v2 publishes step.started together with the step's first content, so a
+// stream that was already watching reads a stored message whose text has
+// started but not ended. v2 stores text only at text.ended: the buffered
+// deltas are new and must stream, not wait for the final snapshot.
+func TestEventsStartedSnapshotStreamsOpenText(t *testing.T) {
+	f := fakeServer(t)
+	ended := false
+	f.on("GET /api/session/s1/message/msg01", func(fakeCall) (int, any) {
+		text := ""
+		if ended {
+			text = "Hello"
+		}
+		return http.StatusOK, json.RawMessage(`{"data":{"id":"msg01","type":"assistant",
+			"time":{"created":100},"content":[{"type":"text","text":"` + text + `"}]}}`)
+	})
+	const d = `"sessionID":"s1","assistantMessageID":"msg01"`
+	f.events = []string{
+		fakeEv("session.step.started", 100, "", `{`+d+`,"started":100}`),
+		fakeEv("session.text.started", 100, "", `{`+d+`,"ordinal":0}`),
+		fakeEv("session.text.delta", 101, "", `{`+d+`,"ordinal":0,"delta":"Hel"}`),
+		fakeEv("session.text.delta", 102, "", `{`+d+`,"ordinal":0,"delta":"lo"}`),
+	}
+	var deltas []string
+	for _, ev := range cmpStream(t, f.URL+"/event") {
+		if p := cmpPart(ev); p["type"] == "text" && p["id"] != PartID("msg01", 1) {
+			t.Fatalf("text emitted as extra part %v", p["id"])
+		}
+		if ev["type"] == "message.part.delta" {
+			props := obj(ev, "properties")
+			if props["partID"] != PartID("msg01", 1) || props["field"] != "text" {
+				t.Fatalf("delta = %v", props)
+			}
+			deltas = append(deltas, str(props, "delta"))
+		}
+	}
+	if strings.Join(deltas, "") != "Hello" {
+		t.Fatalf("open text streamed %q, want Hello before the step ends", deltas)
+	}
+
+	// Once the snapshot holds the ended text, buffered deltas are duplicates.
+	ended = true
+	f.events = []string{
+		fakeEv("session.step.started", 100, "", `{`+d+`,"started":100}`),
+		fakeEv("session.text.delta", 101, "", `{`+d+`,"ordinal":0,"delta":"Hello"}`),
+	}
+	for _, ev := range cmpStream(t, f.URL+"/event") {
+		if ev["type"] == "message.part.delta" {
+			t.Fatalf("delta replayed onto ended snapshot text: %v", ev)
+		}
 	}
 }
