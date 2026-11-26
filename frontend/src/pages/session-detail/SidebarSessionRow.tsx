@@ -172,7 +172,7 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
         )}
         {flat && (
           <span className="session-sidebar-git-slot">
-            <GitStatusLine info={gitInfo} icon={isWorktree ? 'worktree' : 'branch'} />
+            <GitStatusLine info={gitInfo} icon={isWorktree ? 'worktree' : 'branch'} pending={{ stale: !!sib.stale }} />
           </span>
         )}
       </span>

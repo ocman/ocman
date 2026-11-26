@@ -23,6 +23,18 @@
   padding-right: 2px;
 }
 
+.git-status-pending {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding-inline: 2px;
+  color: var(--warning);
+  font-size: 9px;
+}
+.git-status-pending[data-stale="true"] { color: var(--subtext0); }
+.git-status-pending:focus-visible { outline-offset: -1px; }
+
 /* Nested session rows use the inline --depth property for their gutter. */
 .session-child-branch {
   flex-shrink: 0;
