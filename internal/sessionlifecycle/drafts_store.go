@@ -115,7 +115,7 @@ func (s draftStore) save(ctx context.Context, id string, metadata json.RawMessag
 	return err
 }
 
-// accept commits the complete first payload before the request is acknowledged.
+// accept commits the complete first payload and its target, even if autosave never ran.
 // Replays are reads. Neither a lost response nor a peer tab can start it twice.
 func (s draftStore) accept(ctx context.Context, id string, request []byte) (ConversationDraft, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -123,8 +123,15 @@ func (s draftStore) accept(ctx context.Context, id string, request []byte) (Conv
 		return ConversationDraft{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, `UPDATE conversation_draft SET phase='accepted', request=?, submitted_at=? WHERE id=? AND phase='draft'`,
-		string(request), time.Now().UnixMilli(), id)
+	now := time.Now().UnixMilli()
+	res, err := tx.ExecContext(ctx, `INSERT INTO conversation_draft(id,metadata,phase,request,created_at,updated_at,submitted_at)
+		VALUES(:id,json_object('draftId',:id,'directory',json_extract(:request,'$.directory'),
+			'remoteId',json_extract(:request,'$.remoteId'),'platform',json_extract(:request,'$.platform'),
+			'title',json_extract(:request,'$.title'),'cloneUrl',json_extract(:request,'$.cloneUrl')),
+			'accepted',:request,:now,:now,:now)
+		ON CONFLICT(id) DO UPDATE SET phase=excluded.phase,metadata=excluded.metadata,request=excluded.request,
+			updated_at=excluded.updated_at,submitted_at=excluded.submitted_at WHERE conversation_draft.phase='draft'`,
+		sql.Named("id", id), sql.Named("request", string(request)), sql.Named("now", now))
 	if err != nil {
 		return ConversationDraft{}, false, err
 	}

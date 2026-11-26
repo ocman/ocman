@@ -90,8 +90,11 @@ func TestDraftPayloadCommitsBeforeSetupAndKeepsIdentity(t *testing.T) {
 			if err := m.Start(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if w := draftCall(m, "PUT", "/api/session-drafts/"+draftID, `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode"}`); w.Code != 200 {
-				t.Fatal(w.Code, w.Body.String())
+			if fail {
+				// A stale autosave must not determine where the submitted prompt goes.
+				if w := draftCall(m, "PUT", "/api/session-drafts/"+draftID, `{"directory":"/old","remoteId":"local","platform":"opencode"}`); w.Code != 200 {
+					t.Fatal(w.Code, w.Body.String())
+				}
 			}
 			payload := `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode","prompt":"first","send":{"message":"first"}}`
 			w := draftCall(m, "POST", "/api/session-drafts/"+draftID+"/start", payload)
@@ -103,6 +106,10 @@ func TestDraftPayloadCommitsBeforeSetupAndKeepsIdentity(t *testing.T) {
 			var accepted ConversationDraft
 			if json.Unmarshal(w.Body.Bytes(), &accepted) != nil || accepted.ID != draftID || !strings.Contains(string(accepted.Request), `"message":"first"`) {
 				t.Fatal("acknowledged without persisting complete payload", w.Body.String())
+			}
+			var target Target
+			if err := json.Unmarshal(accepted.Metadata, &target); err != nil || target.Directory != "/repo" || target.RemoteID != "box" || target.Platform != "r-box:claudecode" {
+				t.Fatalf("accepted target = %+v, err = %v", target, err)
 			}
 			if !m.QueueBlocked(t.Context(), draftID) {
 				t.Fatal("setup did not hold follow-ups")

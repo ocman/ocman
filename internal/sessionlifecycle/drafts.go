@@ -166,10 +166,6 @@ func (m *Module) acceptDraft(w http.ResponseWriter, r *http.Request) {
 	store := draftStore{m.d.DB}
 	draft, created, err := store.accept(r.Context(), id, raw)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.NotFound(w, r)
-			return
-		}
 		if errors.Is(err, errDraftSubmissionConflict) {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return

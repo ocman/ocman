@@ -60,29 +60,30 @@ export function refreshBackendDrafts(): Promise<void> {
 }
 
 const saves = new Map<string, Promise<void>>();
-export function persistBackendDraft(id: string, intent?: 'submit'): Promise<void> {
+export function persistBackendDraft(id: string): Promise<void> {
   const draft = getConversationDraft(id);
   if (!draft || !isBackendDraft(id)) return Promise.resolve();
   const snapshot = { ...draft, text: getDraft(id) };
   const previous = saves.get(id) ?? Promise.resolve();
-  const save = previous.catch(() => {}).then(() => writeBackendDraft(id, snapshot, intent));
+  const save = previous.catch(() => {}).then(() => writeBackendDraft(id, snapshot));
   saves.set(id, save);
   void save.finally(() => { if (saves.get(id) === save) saves.delete(id); }).catch(() => {});
   return save;
 }
 
-async function writeBackendDraft(id: string, snapshot: ConversationDraft & { text: string }, intent?: 'submit') {
-  if (useBackendConversationDrafts.getState().recoveryTargets[id]) throw new Error('Wait for the recovered draft route before saving.');
-  if (!intent && useBackendConversationDrafts.getState().conflicts[id]) throw new Error('Resolve the draft conflict before saving.');
+async function writeBackendDraft(id: string, snapshot: ConversationDraft & { text: string }) {
+  const { drafts, recoveryTargets, conflicts } = useBackendConversationDrafts.getState();
+  if (drafts[id] && drafts[id].phase !== 'draft') return;
+  if (recoveryTargets[id]) throw new Error('Wait for the recovered draft route before saving.');
+  if (conflicts[id]) throw new Error('Resolve the draft conflict before saving.');
   try {
-    const revision = useBackendConversationDrafts.getState().drafts[id]?.revision ?? '';
-    const headers: Record<string, string> = { 'If-Match': revision };
-    if (intent) headers['X-Ocman-Draft-Intent'] = intent;
+    const headers = { 'If-Match': drafts[id]?.revision ?? '' };
     const saved = await postJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}`, snapshot, { method: 'PUT', headers });
-    if (saved) useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: saved } }));
     useBackendConversationDrafts.setState((state) => {
+      if (state.drafts[id] && state.drafts[id].phase !== 'draft') return state;
       const saveErrors = { ...state.saveErrors }; delete saveErrors[id];
-      return { saveErrors, conflicts: state.conflicts[id] ? { ...state.conflicts, [id]: false } : state.conflicts };
+      return { drafts: saved ? { ...state.drafts, [id]: saved } : state.drafts,
+        saveErrors, conflicts: state.conflicts[id] ? { ...state.conflicts, [id]: false } : state.conflicts };
     });
   } catch (error) {
     useBackendConversationDrafts.setState((state) => {
@@ -161,8 +162,7 @@ export function shouldArchiveBackendDraft(record?: BackendConversationDraft) {
 }
 
 export async function acceptBackendDraft(id: string, request: DurableStartRequest) {
-  // The initial submission has already saved the draft with submit intent.
-  // Retrying admission must replay the same payload, not save the live editor again.
+  // Admission stores the complete payload independently of draft autosaves.
   const draft = await postJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}/start`, request);
   useBackendConversationDrafts.setState((state) => {
     const saveErrors = { ...state.saveErrors }; delete saveErrors[id];

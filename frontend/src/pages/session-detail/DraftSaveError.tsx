@@ -30,7 +30,7 @@ export function DraftSaveError({ id, error, retry, navigate, getLocalText }: Pro
   }
   if (!error && !open) return null;
   return <>
-    {error && <InlineAlert tone="warning" retryLabel="Resolve" retrying={retrying} onRetry={() => void resolve()}>Draft not saved on the backend: {error}</InlineAlert>}
+    {error && <InlineAlert tone="warning" retryLabel="Resolve" retrying={retrying} onRetry={() => void resolve()}>Draft not saved on the backend: {error}. You can still send this prompt.</InlineAlert>}
     {open && <DraftConflict id={id} onClose={() => setOpen(false)} navigate={navigate} />}
   </>;
 }

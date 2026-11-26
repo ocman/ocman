@@ -196,26 +196,28 @@ it('clears only after backend persistence, then accepts a follow-up while setup 
   expect(useBackendConversationDrafts.getState().drafts[id].id).toBe(id);
 });
 
-it('retains the prompt when backend persistence fails', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => options?.method === 'PUT'
-    ? new Response('disk full', { status: 500 }) : json(url === '/api/session-drafts' ? [] : record)));
+it('retains the prompt when the start request fails', async () => {
+  const fetcher = vi.mocked(fetch);
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (url, options) => String(url).endsWith('/start')
+    ? new Response('disk full', { status: 500 }) : original(url, options));
   render(<NewConversation params={record.metadata} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
   const input = await screen.findByRole('textbox');
   fireEvent.input(input, { target: { value: 'do not lose this' } });
   fireEvent.keyDown(input, { key: 'Enter' });
-  await waitFor(() => expect(screen.getAllByRole('alert').length).toBeGreaterThan(0));
+  expect(await screen.findByRole('alert')).toHaveTextContent('disk full');
   await waitFor(() => expect(input).not.toBeDisabled());
   expect(input).toHaveValue('do not lose this');
   expect(api.startSession).not.toHaveBeenCalled();
 });
 
-it.each([false, true])('sends on Enter despite autosave failure (late response: %s)', async (late) => {
+it.each(['failure before admission', 'failure after admission', 'success after admission'])('sends on Enter despite an autosave warning and pending autosave (%s)', async (outcome) => {
   const fetcher = vi.mocked(fetch);
   const original = fetcher.getMockImplementation()!;
   let finishAutosave: ((response: Response) => void) | undefined;
   let holdAutosave = false;
   fetcher.mockImplementation(async (url, options) => {
-    if (options?.method === 'PUT' && new Headers(options.headers).get('X-Ocman-Draft-Intent') !== 'submit') {
+    if (options?.method === 'PUT') {
       if (holdAutosave) {
         holdAutosave = false;
         return new Promise<Response>((resolve) => { finishAutosave = resolve; });
@@ -229,19 +231,22 @@ it.each([false, true])('sends on Enter despite autosave failure (late response: 
   await act(async () => { await persistBackendDraft(id).catch(() => {}); });
   await screen.findByText(/Draft not saved on the backend/);
   fireEvent.input(input, { target: { value: 'Send this anyway' } });
-  fireEvent.keyDown(input, { key: 'Enter' });
-  await waitFor(() => expect(payload).toMatchObject({ send: { message: 'Send this anyway' } }));
   holdAutosave = true;
   const autosave = persistBackendDraft(id).catch(() => {});
   await waitFor(() => expect(finishAutosave).toBeDefined());
-  const failAutosave = () => act(async () => {
-    finishAutosave!(new Response('autosave unavailable', { status: 503 }));
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await vi.waitFor(() => expect(payload).toMatchObject({ send: { message: 'Send this anyway' } }));
+  const finish = (response: Response) => act(async () => {
+    finishAutosave!(response);
     await autosave;
   });
-  if (!late) await failAutosave();
+  const failed = new Response('autosave unavailable', { status: 503 });
+  const saved = json(record);
+  if (outcome === 'failure before admission') await finish(failed);
   record = { ...record, phase: 'accepted', submittedAt: Date.now(), request: payload as BackendConversationDraft['request'] };
   await act(async () => release(json(record, 202)));
-  if (late) await failAutosave();
+  if (outcome !== 'failure before admission') await finish(outcome === 'success after admission' ? saved : failed);
   await waitFor(() => expect(input).toHaveValue(''));
+  expect(screen.getByTestId('pending-prompt')).toHaveTextContent('Send this anyway');
   expect(screen.queryByText(/Draft not saved on the backend/)).toBeNull();
 });

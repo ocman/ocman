@@ -91,19 +91,17 @@ export function useDurableConversation(params: NewConversationProps['params'], n
         await admitInitial(pending.request);
         if (pending.original === original) return;
       }
-      const observed = useBackendConversationDrafts.getState().drafts[id];
-      const initialSubmission = !observed || observed.phase === 'draft';
-      await persistBackendDraft(id, initialSubmission ? 'submit' : undefined);
-      await fetchBackendDraft(id);
-      const current = useBackendConversationDrafts.getState().drafts[id];
-      if (files?.length && request.send) request = { ...request, send: { ...request.send, message: await uploadDraftFiles(id, request.send.message, files) } };
-      if (current && current.phase !== 'draft' && !initialSubmission) {
+      const { drafts, recoveryTargets } = useBackendConversationDrafts.getState();
+      if (recoveryTargets[id]) throw new Error('Wait for the recovered draft route before sending.');
+      if (drafts[id] && drafts[id].phase !== 'draft') {
         if (request.command || request.shell) throw new Error('Commands can run after setup completes. Messages can be queued now.');
         if (!request.send) throw new Error('Only messages can be queued during setup.');
-        await queueBackendDraft(id, request.send);
+        const send = request.send;
+        await queueBackendDraft(id, files?.length ? { ...send, message: await uploadDraftFiles(id, send.message, files) } : send);
         queue.refresh();
         return;
       }
+      if (files?.length && request.send) request = { ...request, send: { ...request.send, message: await uploadDraftFiles(id, request.send.message, files, request) } };
       // The response means persisted, not setup complete. Composer can clear now.
       pendingInitial.current = { request, original };
       await admitInitial(request);

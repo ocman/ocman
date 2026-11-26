@@ -204,6 +204,17 @@ func (h *draftAttachmentHost) SaveComposerAttachment(_ context.Context, req host
 }
 
 func TestDraftAttachmentPersistsOnExplicitOwnerBeforeAllocation(t *testing.T) {
+	for _, tc := range []struct{ name, metadata, query string }{
+		{"saved target", `{"directory":"/repo","remoteId":"box"}`, ""},
+		{"no autosave", "", "?directory=%2Frepo&platform=r-box%3Aopencode"},
+		{"stale autosave", `{"directory":"/stale","remoteId":"local"}`, "?directory=%2Frepo&remoteId=box"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { testDraftAttachment(t, tc.metadata, tc.query) })
+	}
+}
+
+func testDraftAttachment(t *testing.T, metadata, query string) {
+	t.Helper()
 	db := statetest.Open(t, Schema)
 	host := &draftAttachmentHost{}
 	m := NewModule(Deps{DB: db.SQL(), Owner: func(_ http.ResponseWriter, dir, owner string) (hostsvc.Host, bool) {
@@ -212,8 +223,10 @@ func TestDraftAttachmentPersistsOnExplicitOwnerBeforeAllocation(t *testing.T) {
 		}
 		return host, true
 	}, UploadReadTimeout: func() time.Duration { return time.Second }})
-	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","remoteId":"box"}`); w.Code != 200 {
-		t.Fatal(w.Code)
+	if metadata != "" {
+		if w := draftCall(m, "PUT", "/draft", metadata); w.Code != 200 {
+			t.Fatal(w.Code)
+		}
 	}
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
@@ -225,7 +238,7 @@ func TestDraftAttachmentPersistsOnExplicitOwnerBeforeAllocation(t *testing.T) {
 	if err := form.Close(); err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest(http.MethodPost, "/draft/attachment", &body)
+	r := httptest.NewRequest(http.MethodPost, "/draft/attachment"+query, &body)
 	r.Header.Set("Content-Type", form.FormDataContentType())
 	r.SetPathValue("id", draftID)
 	w := httptest.NewRecorder()

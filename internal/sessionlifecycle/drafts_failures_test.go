@@ -37,7 +37,7 @@ func TestDraftStorageFailuresStayVisibleAndBlockQueue(t *testing.T) {
 	}
 }
 
-func TestDraftAdmissionMissingConflictAndStoppedWorker(t *testing.T) {
+func TestDraftAdmissionConflictAndStoppedWorker(t *testing.T) {
 	db := statetest.Open(t, Schema)
 	m := NewModule(Deps{DB: db.SQL(), Sessions: func() Sessions { return &startSessions{} },
 		Owner: func(http.ResponseWriter, string, string) (hostsvc.Host, bool) { return &startHost{}, true },
@@ -46,9 +46,6 @@ func TestDraftAdmissionMissingConflictAndStoppedWorker(t *testing.T) {
 		},
 	})
 	payload := `{"directory":"/repo","platform":"r-box:claudecode","send":{"message":"saved"}}`
-	if w := draftCall(m, http.MethodPost, "/draft/start", payload); w.Code != http.StatusNotFound {
-		t.Fatal(w.Code, w.Body.String())
-	}
 	if w := draftCall(m, http.MethodPost, "/draft/start", `{`); w.Code != http.StatusBadRequest {
 		t.Fatal(w.Code)
 	}

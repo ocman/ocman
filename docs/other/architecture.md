@@ -1887,15 +1887,19 @@ flowchart LR
   on mounted conversation cards. Preview checks use the existing preview
   resolver endpoint so the conversation owner and preview credentials remain
   authoritative, including PR links outside the active project's repository.
-- **New session target.** A new conversation is a client-only route,
-  `/session/new?dir=…&remoteId=…&platform=…&draftId=…`, until its first prompt: no
-  session, worktree or placeholder exists before that. `NewConversation`
+- **New session target.** A new conversation gets an Ocman draft ID at
+  `/session/{id}?dir=…`. Autosave can create a draft record, but it never
+  creates a native session or worktree. `NewConversation`
   calls `POST /api/sessions/prepare`, which reads the directory's agent, command and model
   catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes). The
   composer's `useDraftCatalog` requests `selectedOnly` to open the submission
   gate, then loads the full model inventory independently. Optional failures
   cannot block submission, and late inventory only enriches the picker, never
   replaces the prepared defaults. Changing owner or directory cancels both reads.
+  `POST /api/session-drafts/{id}/start` stores the first prompt and its chosen
+  target together. It creates the draft record if autosave never succeeded and
+  does not wait for an autosave or draft revision check. Initial file uploads
+  also use the chosen target rather than requiring saved draft metadata.
   Native OpenCode creation receives permissions and initial agent/model/variant
   together through the owner-routed `CreationIdentity`. Its acknowledged
   configuration receipt avoids the permission PATCH/readback; the initial send
@@ -1906,7 +1910,8 @@ flowchart LR
   flowchart LR
       Composer --> Selected[Selected catalog + project settings]
       Selected --> Ready[Submission ready]
-       Ready --> Create[Owner-local configured creation]
+       Ready --> Admit[Persist first prompt and target]
+       Admit --> Create[Owner-local configured creation]
        Create --> Prompt[Live selection check + first prompt]
        Create -->|Proven pre-allocation failure| Saved[Saved message + explicit retry]
        Saved -->|retry-setup, same ID and payload| Create

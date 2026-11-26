@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (m *Module) HandleSessionAttachment(w http.ResponseWriter, r *http.Request) {
@@ -39,20 +41,39 @@ func (m *Module) draftAttachment(w http.ResponseWriter, r *http.Request) {
 	if !m.draftEnabled(w) {
 		return
 	}
-	draft, err := (draftStore{m.d.DB}).get(r.Context(), r.PathValue("id"))
-	if err != nil || draft.Phase == "discarded" {
+	id := r.PathValue("id")
+	if !sessioncatalog.IsID(id) {
 		http.NotFound(w, r)
 		return
 	}
+	draft, err := (draftStore{m.d.DB}).get(r.Context(), id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		httpx.ServerError(w, "reading draft for attachment", err)
+		return
+	}
 	var target Target
-	if json.Unmarshal(draft.Metadata, &target) != nil || !target.Validate(w) || !target.NormalizeOwner(w) {
+	query := r.URL.Query()
+	switch {
+	case draft.Phase == "discarded" || (err != nil && !query.Has("directory")):
+		http.NotFound(w, r)
+		return
+	case query.Has("directory") && (err != nil || draft.Phase == "draft"):
+		// Initial uploads use the chosen submit target, not stale or missing autosave metadata.
+		target = Target{Directory: query.Get("directory"), RemoteID: query.Get("remoteId"), Platform: query.Get("platform")}
+	default:
+		if err := json.Unmarshal(draft.Metadata, &target); err != nil {
+			httpx.ServerError(w, "reading attachment target", err)
+			return
+		}
+	}
+	if !target.Validate(w) || !target.NormalizeOwner(w) {
 		return
 	}
 	owner, ok := m.d.Owner(w, target.Directory, target.RemoteID)
 	if !ok {
 		return
 	}
-	m.saveOwnerAttachment(w, r, owner, target.Directory, draft.ID)
+	m.saveOwnerAttachment(w, r, owner, target.Directory, id)
 }
 
 func (m *Module) saveOwnerAttachment(w http.ResponseWriter, r *http.Request, owner hostsvc.Host, directory, sessionID string) {

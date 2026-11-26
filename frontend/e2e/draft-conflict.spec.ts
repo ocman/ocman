@@ -1,7 +1,7 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 import type { BackendConversationDraft } from '../src/lib/backendConversationDrafts';
 
-for (const width of [1280, 390]) for (const choice of ['Keep my edits', 'Use server version', 'Send over an old draft']) test(`resolves a draft conflict with ${choice} at ${width}px`, async ({ mockedPage: page }) => {
+for (const width of [1280, 390]) for (const choice of ['Keep my edits', 'Use server version', 'Send without resolving']) test(`handles a draft conflict with ${choice} at ${width}px`, async ({ mockedPage: page }) => {
   await page.setViewportSize({ width, height: 844 });
   const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
   let draft: BackendConversationDraft = { id, metadata: { draftId: id, directory: MOCK_SESSION.directory, remoteId: 'local', platform: 'opencode', text: 'Original' },
@@ -15,9 +15,8 @@ for (const width of [1280, 390]) for (const choice of ['Keep my edits', 'Use ser
   await page.route('**/api/session-drafts**', (route) => {
     const request = route.request();
     if (request.method() === 'PUT') {
-      const submittingOverOldDraft = choice === 'Send over an old draft' && request.headers()['x-ocman-draft-intent'] === 'submit';
-      if (request.headers()['if-match'] !== draft.revision && !submittingOverOldDraft) return route.fulfill({ status: 409, body: 'Draft changed in another browser' });
-      draft = { ...draft, metadata: request.postDataJSON(), revision: submittingOverOldDraft ? 'C' : draft.revision };
+      if (request.headers()['if-match'] !== draft.revision) return route.fulfill({ status: 409, body: 'Draft changed in another browser' });
+      draft = { ...draft, metadata: request.postDataJSON() };
       return route.fulfill({ json: draft });
     }
     if (request.url().endsWith('/start')) {
@@ -34,7 +33,7 @@ for (const width of [1280, 390]) for (const choice of ['Keep my edits', 'Use ser
   draft = { ...draft, revision: 'B', metadata: { ...draft.metadata, text: 'Peer edits', title: 'Peer title' } };
   await composer.fill('My edits');
   const warning = page.getByRole('status').filter({ hasText: 'Draft not saved' });
-  if (choice === 'Send over an old draft') {
+  if (choice === 'Send without resolving') {
     await expect(warning).toBeVisible();
     await composer.press('Enter');
     await expect.poll(() => submitted, { timeout: 5000 }).toBe('My edits');
