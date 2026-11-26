@@ -74,6 +74,18 @@ it('does not show a work disclosure for a completed reply without hidden work', 
   expect(screen.queryByText(/Worked for/)).not.toBeInTheDocument();
 });
 
+it('keeps the compaction marker visible with agent activity collapsed', () => {
+  useUiStore.setState({ collapseAgentActivity: true });
+  const compaction: Message = { ...step, data: { role: 'assistant', agent: 'compaction' } };
+  const { rerender } = render(conversation([user, compaction], [prompt], 'busy'));
+  const marker = screen.getByRole('separator', { name: 'Context compaction' });
+  expect(marker).toBeVisible();
+
+  rerender(conversation([user, compaction], [prompt, part('step', 'summary', { type: 'text', text: 'Earlier work summarized' })], 'busy'));
+  expect(screen.getByRole('separator', { name: 'Context compaction' })).toBeVisible();
+  expect(screen.getByText('Earlier work summarized')).toBeVisible();
+});
+
 it('keeps progress prose inline before the subsequent tool work in the same message', () => {
   useUiStore.setState({ collapseAgentActivity: true });
   render(conversation([user, step], [prompt,

@@ -56,7 +56,7 @@ describe('adjacent exploration messages', () => {
     expect(messageExploration([boundary], boundary.id)).toBeNull();
   });
 
-  it.each([{ modelChangedTo: 'new-model' }, { timelineAt: 100 }])('respects visible dividers %j', custom => {
+  it.each([{ modelChangedTo: 'new-model' }, { timelineAt: 100 }, { contextCompaction: true }])('respects visible dividers %j', custom => {
     const divided = { ...b, metadata: { custom } };
     expect(messageExploration([a, divided, c], 'a')).toHaveLength(1);
     expect(messageExploration([a, divided, c], 'b')).toHaveLength(2);

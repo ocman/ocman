@@ -221,5 +221,5 @@ export function AgentActivityMessages({ components, promptAliases }: ActivityMes
 
 function hasInlineContent(message: ThreadMessage, parts: ReturnType<typeof activityParts>, stats: TurnAggregate) {
   return hasAssistantError(message.status) || (!stats.isLive && stats.isSummaryAnchor) || parts.inline.length || parts.text.inline
-    || message.metadata.custom?.timelineAt || message.metadata.custom?.modelChangedTo;
+    || message.metadata.custom?.timelineAt || message.metadata.custom?.modelChangedTo || message.metadata.custom?.contextCompaction;
 }

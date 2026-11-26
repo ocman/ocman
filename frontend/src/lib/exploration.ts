@@ -27,7 +27,7 @@ function onlyExploration(message: ExplorationMessage): boolean {
 
 function continuesExploration(previous: ExplorationMessage, next: ExplorationMessage): boolean {
   return onlyExploration(previous) && onlyExploration(next)
-    && !next.metadata?.custom?.modelChangedTo && !next.metadata?.custom?.timelineAt;
+    && !next.metadata?.custom?.modelChangedTo && !next.metadata?.custom?.timelineAt && !next.metadata?.custom?.contextCompaction;
 }
 
 /** Collect adjacent lookup-only messages without changing message IDs or turn statistics. */

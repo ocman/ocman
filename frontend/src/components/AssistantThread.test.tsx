@@ -88,12 +88,14 @@ vi.mock('@assistant-ui/react', async () => {
   };
 });
 
-vi.mock('../lib/turnStats', () => ({
+vi.mock(import('../lib/turnStats'), async (importOriginal) => ({
+  ...await importOriginal(),
   useModelLabel: (model: string) => model,
   useTurnStats: () => turnStats,
 }));
 
 import { AssistantThread, ImageDisplay } from './AssistantThread';
+import { createConvertMessages } from '../lib/convertMessages';
 import { formatTimelineMarker } from '../lib/conversationTimeline';
 import { formatFullDateTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
@@ -520,6 +522,24 @@ describe('AssistantThread slash-command skills', () => {
 });
 
 describe('conversation timeline markers', () => {
+  it.each([{ summary: true }, { agent: 'compaction' }])('marks compaction before and after the summary arrives (%j)', (data) => {
+    const [compaction] = createConvertMessages()([
+      { id: message.id, sessionId: 's1', timeCreated: 1000, data: { role: 'assistant', ...data } },
+    ], []);
+    message.metadata.custom = compaction.metadata?.custom ?? {};
+    message.content = [];
+    turnStats.isSummaryAnchor = false;
+    const { rerender } = render(<AssistantThread />);
+
+    const marker = () => screen.getByRole('separator', { name: 'Context compaction' });
+    expect(marker()).toBeInTheDocument();
+
+    message.content = [{ type: 'text', text: 'Earlier work summarized' }];
+    rerender(<AssistantThread />);
+    const summary = screen.getByText('Earlier work summarized');
+    expect(marker().compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('formats markers relative to the current day', () => {
     const now = new Date(2026, 8, 14, 9);
 

@@ -681,6 +681,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       ...(msgAgent ? { agent: msgAgent } : {}),
       ...(model ? { model } : {}),
       ...(modelChangedTo ? { modelChangedTo } : {}),
+      ...(role === 'assistant' && (m.data.summary || m.data.agent === 'compaction') ? { contextCompaction: true } : {}),
       ...(timelineAt ? { timelineAt } : {}),
       ...(failedEntry ? { failed: { error: failedEntry.error, imagesDropped: !!failedEntry.imagesDropped } } : {}),
     };

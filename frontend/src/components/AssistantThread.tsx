@@ -5,7 +5,7 @@ import {
   MessagePrimitive,
 } from '@assistant-ui/react';
 
-import { useModelLabel, useTurnStats } from '../lib/turnStats';
+import { useTurnStats } from '../lib/turnStats';
 import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
@@ -38,7 +38,7 @@ import { ActivityMessage, AgentActivityMessages } from './assistant/AgentActivit
 import { findActivityTarget, useActivitySlice } from './assistant/agentActivityState';
 import { useMessage } from './assistant/useMessage';
 import { ExplorationContent } from './assistant/ExplorationContent';
-import { ModelLabel } from './ModelLogo';
+import { ContextCompactionDivider, ModelChangeDivider } from './assistant/ConversationDivider';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 import { TimelineMarker } from './assistant/TimelineMarker';
 import { ConversationLaunchContext } from './assistant/ConversationLaunchContext';
@@ -234,12 +234,14 @@ const AssistantMessage: FC = () => {
   const timelineAt = typeof custom?.timelineAt === 'number' ? custom.timelineAt : 0;
   const turnStats = useTurnStats();
   const slice = useActivitySlice();
+  const compaction = custom?.contextCompaction === true;
+  const decorations = <>{!!timelineAt && <TimelineMarker timestamp={timelineAt} />}{modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}{compaction && <ContextCompactionDivider />}</>;
   if (slice) return <ActivityMessage slice={slice} components={ASSISTANT_PART_COMPONENTS} actions={<TurnActions messageId={messageId} />}
-    decorations={<>{!!timelineAt && <TimelineMarker timestamp={timelineAt} />}{modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}</>} />;
+    decorations={decorations} />;
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
-  if (!shouldRenderAssistantMessage(hasContent, turnStats?.isSummaryAnchor ?? false)) return null;
+  if (!shouldRenderAssistantMessage(hasContent, turnStats?.isSummaryAnchor ?? false)) return compaction ? decorations : null;
 
   // Messages that only contain muted tool calls (reads/greps/webfetch) render as a compact list
   const onlyMuted = content.every(
@@ -254,8 +256,7 @@ const AssistantMessage: FC = () => {
   if (onlyMuted) {
     return (
       <>
-        {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
-        {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
+        {decorations}
         <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
           <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
           <TurnSummaryBar actions={<TurnActions messageId={messageId} />} />
@@ -266,8 +267,7 @@ const AssistantMessage: FC = () => {
 
   return (
     <>
-      {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
-      {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
+      {decorations}
       <MessagePrimitive.Root className={`oc-msg oc-msg-assistant${onlyTools ? ' oc-msg-tools' : ''}`} data-message-id={messageId}>
         <div className="oc-msg-body oc-md">
           <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
@@ -276,24 +276,6 @@ const AssistantMessage: FC = () => {
         <TurnSummaryBar actions={<TurnActions messageId={messageId} />} />
       </MessagePrimitive.Root>
     </>
-  );
-};
-
-/**
- * Centered divider chip rendered before the first assistant message that
- * switches the conversation to a new model. Mirrors the look of an
- * in-thread date separator so model changes are easy to scan.
- */
-const ModelChangeDivider: FC<{ model: string }> = ({ model }) => {
-  const label = useModelLabel(model);
-  return (
-    <div className="oc-model-change" role="separator" data-testid="model-change-divider">
-      <span className="oc-model-change-line" aria-hidden="true" />
-      <span className="oc-model-change-chip" title={model}>
-        Model changed to <ModelLabel model={model}>{label}</ModelLabel>
-      </span>
-      <span className="oc-model-change-line" aria-hidden="true" />
-    </div>
   );
 };
 
