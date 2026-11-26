@@ -24,17 +24,18 @@ and filter by enabled, disabled or needs-attention status. The compact list show
 Plugin icons appear in the list and drawer header, with a puzzle fallback when
 an icon is absent or unavailable. The drawer's **Enabled** toggle disables a
 plugin immediately. It also re-enables an unchanged plugin immediately if all
-requested grants are still approved. Otherwise, it opens permission review.
+requested grants are still approved. Otherwise, it opens an approval dialog
+without leaving the current tab.
 Plugins that were already disabled before the upgrade may need one more review.
 **View logs** opens diagnostics directly from any tab.
 
 Open a plugin to manage it in a detail drawer. **Settings** contains its editable
-configuration, **Permissions** contains grant review and enable/disable controls,
-and **Diagnostics** contains retry/restart controls, recent stderr and expandable
-technical metadata. Diagnostics loads the bounded stderr log automatically and
-offers refresh and copy controls. A failed refresh keeps the last successful log
-visible. The drawer names the owning host. Unsaved configuration edits
-require confirmation before closing the drawer or switching tabs, including
+configuration, **Permissions** lists requested and current grants and contains
+enable/disable controls, and **Diagnostics** contains retry/restart controls,
+recent stderr and expandable technical metadata. Diagnostics loads the bounded
+stderr log automatically and offers refresh and copy controls. A failed refresh
+keeps the last successful log visible. The drawer names the owning host. Unsaved
+configuration edits require confirmation before closing the drawer or switching tabs, including
 Back/Forward changes to the selected plugin, host or detail tab. Declining a
 history transition restores the original URL and keeps the draft mounted. Secrets remain
 write-only. Search, filters, pagination, host, selected plugin and detail tab are

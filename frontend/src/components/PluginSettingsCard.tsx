@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import type { PluginSettingsView } from './PluginSettingsDrawer';
 import { hasConversationCapability, type PluginRegistration } from '../lib/plugins';
 import { usePluginManagement, type PluginManagement } from '../lib/usePluginManagement';
@@ -7,6 +8,9 @@ import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
 import { PluginAgentTools, PluginAgentToolsDisclosure } from './PluginAgentTools';
 import { PluginLogs } from './PluginLogs';
 import { Button, ButtonGroup } from './Control';
+import { Modal } from './Modal';
+import { ModalFooter } from './ModalFooter';
+import { ModalHeader } from './ModalHeader';
 import styles from './PluginSettingsCard.module.css';
 
 const UI_GRANT = 'ui.app';
@@ -19,7 +23,7 @@ function PluginGrants({ grants, label }: { grants?: string[] | null; label: stri
   </ul>;
 }
 
-function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
+function PluginMetadata({ plugin: p, showGrants }: { plugin: PluginRegistration; showGrants: boolean }) {
   const d = p.description;
   return <>
     <SettingRow label="Immutable ID"><code>{d.id}</code></SettingRow>
@@ -28,8 +32,10 @@ function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
     <SettingRow label="Capabilities">{d.capabilities?.map((c) => `${c.name} v${c.version.major}.${c.version.minor}`).join(', ') || 'None'}</SettingRow>
     <SettingRow label="Execution scope">{d.scope}</SettingRow>
     {d.ui && <SettingRow label="Interface" block>In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
-    <SettingRow label="Requested grants" block><PluginGrants grants={d.requestedGrants} label="Requested grants" /></SettingRow>
-    <SettingRow label="Current grants" block><PluginGrants grants={p.grants} label="Current grants" /></SettingRow>
+    {showGrants && <>
+      <SettingRow label="Requested grants" block><PluginGrants grants={d.requestedGrants} label="Requested grants" /></SettingRow>
+      <SettingRow label="Current grants" block><PluginGrants grants={p.grants} label="Current grants" /></SettingRow>
+    </>}
     <SettingRow label="Status">{p.enabled ? 'Enabled' : 'Disabled'} · {p.health.status}{p.removed ? ' · Executable removed' : ''}</SettingRow>
     <SettingRow label="Restart count">{p.health.restartCount}</SettingRow>
     <SettingRow label="Last error" block>{p.health.lastError || 'None'}</SettingRow>
@@ -59,6 +65,35 @@ function PluginNoticeDisclosure({ plugin: p, owner }: { plugin: PluginRegistrati
   </div>;
 }
 
+function PluginApproval({ plugin: p, owner, management }: { plugin: PluginRegistration; owner: string; management: PluginManagement }) {
+  const { busy, error, review, setReview, mutate } = management;
+  if (!review) return null;
+  const d = p.description;
+  const enabling = review === 'enable';
+  const title = enabling ? 'Review grants before enabling' : 'Review grants';
+  const close = () => setReview(null);
+
+  return createPortal(<Modal label={title} onClose={close} canClose={!busy}>
+    <ModalHeader title={title} description={d.name} onClose={close} canClose={!busy} closeLabel="Close approval" />
+    <div className={styles.review}>
+      <p>This native executable runs on {owner} with {d.scope} scope.</p>
+      <p>Approve checksum <code className={styles.reviewChecksum}>{p.checksum}</code> and these requested grants:</p>
+      {d.requestedGrants?.length ? <PluginGrants grants={d.requestedGrants} label="Grants to approve" /> : <p>No grants requested.</p>}
+      <PluginAgentToolsDisclosure plugin={p} owner={owner} />
+      <PluginUIDisclosure plugin={p} owner={owner} />
+      <PluginNoticeDisclosure plugin={p} owner={owner} />
+    </div>
+    {error && <p role="alert">{error}</p>}
+    {busy && <p role="status">{enabling ? 'Enabling plugin…' : 'Updating grants…'}</p>}
+    <ModalFooter label="Plugin approval actions">
+      <Button type="button" data-autofocus="" disabled={busy} onClick={close}>Cancel approval</Button>
+      <Button type="button" variant="accent" disabled={busy} onClick={() => { void mutate(review, { ...(enabling ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>
+        {enabling ? 'Approve grants and enable' : 'Approve grants'}
+      </Button>
+    </ModalFooter>
+  </Modal>, document.body);
+}
+
 type Props = {
   plugin: PluginRegistration; owner: string; refresh: () => Promise<void>;
   view?: PluginSettingsView; onDirtyChange?: (dirty: boolean) => void;
@@ -84,14 +119,14 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
       <strong>Plugin reported an error</strong><p>{p.health.lastError}</p>
       {onOpenSettings && <Button type="button" size="small" disabled={busy} onClick={onOpenSettings}>Open settings</Button>}
     </div></div>}
-    {permissions && <>
+    {permissions && !review && <>
       <SettingRow label="Execution scope">{d.scope}</SettingRow>
       <SettingRow label="Requested grants" block><PluginGrants grants={d.requestedGrants} label="Requested grants" /></SettingRow>
       <SettingRow label="Current grants" block><PluginGrants grants={p.grants} label="Current grants" /></SettingRow>
       {d.ui && <SettingRow label="Interface" block>In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
     </>}
     {configurationSaved && <p role="status">Configuration saved.</p>}
-    {error && !configuration && <p role="alert">{error}</p>}
+    {error && !configuration && !review && <p role="alert">{error}</p>}
     <fieldset disabled={busy} className={styles.management} aria-label={`${view} for ${d.name}`}>
       {(permissions || diagnostics) && <SettingRow label={diagnostics ? 'Recovery' : 'Lifecycle'} block>
         <ButtonGroup label="Plugin lifecycle actions">
@@ -110,22 +145,8 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
           </>}
         </ButtonGroup>
       </SettingRow>}
-      {permissions && review && <SettingRow label={review === 'enable' ? 'Review grants before enabling' : 'Review grants'} block>
-        <div className={styles.review}>
-          <p>This native executable runs on {owner} with {d.scope} scope.</p>
-          <p>Approve checksum <code className={styles.reviewChecksum}>{p.checksum}</code> and these requested grants:</p>
-          {d.requestedGrants?.length ? <PluginGrants grants={d.requestedGrants} label="Grants to approve" /> : <p>No grants requested.</p>}
-          <PluginAgentToolsDisclosure plugin={p} owner={owner} />
-          <PluginUIDisclosure plugin={p} owner={owner} />
-          <PluginNoticeDisclosure plugin={p} owner={owner} />
-        </div>
-        <ButtonGroup label="Plugin approval actions">
-          <Button type="button" variant="accent" onClick={() => { void mutate(review, { ...(review === 'enable' ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>{review === 'enable' ? 'Approve grants and enable' : 'Approve grants'}</Button>
-          <Button type="button" onClick={() => setReview(null)}>Cancel approval</Button>
-        </ButtonGroup>
-      </SettingRow>}
       {configuration && <PluginConfiguration key={`${configurationAttempt}:${JSON.stringify(p.configuration)}`} plugin={p}
-        onDirtyChange={onDirtyChange} onCancel={onCancel} error={error} saving={pendingAction === 'configuration'} busy={busy}
+        onDirtyChange={onDirtyChange} onCancel={onCancel} error={review ? '' : error} saving={pendingAction === 'configuration'} busy={busy}
         focusRequest={configurationFocus} enableNeedsConfiguration={enableNeedsConfiguration} save={(input) => mutate('configuration', input)} />}
       {permissions && remove && <SettingRow label="Permanently remove plugin data" block>
         <p>Delete configuration, secrets, grants, and private data for {d.id} on {owner}. This cannot be undone. The executable is not deleted.</p>
@@ -140,7 +161,8 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
     {diagnostics && <>
       <dl className={styles.healthSummary}><div><dt>Status</dt><dd>{p.health.status}</dd></div><div><dt>Restart count</dt><dd>{p.health.restartCount}</dd></div></dl>
       <PluginLogs owner={owner} pluginId={d.id} />
-      <details className={styles.technical}><summary>Technical details</summary><PluginMetadata plugin={p} /></details>
+      <details className={styles.technical}><summary>Technical details</summary><PluginMetadata plugin={p} showGrants={!review} /></details>
     </>}
+    <PluginApproval plugin={p} owner={owner} management={management} />
   </section>;
 }

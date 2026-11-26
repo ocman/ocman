@@ -6,7 +6,7 @@ import { pluginConfigurationErrors } from './pluginConfigurationValidation';
 export function usePluginManagement(plugin: PluginRegistration, owner: string, refresh: () => Promise<void>, onConfigure?: () => void) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [review, setReview] = useState<'enable' | 'grants' | null>(null);
+  const [review, setReviewState] = useState<'enable' | 'grants' | null>(null);
   const [configurationAttempt, setConfigurationAttempt] = useState(0);
   const [configurationSaved, setConfigurationSaved] = useState(false);
   const [configurationFocus, setConfigurationFocus] = useState(0);
@@ -14,6 +14,11 @@ export function usePluginManagement(plugin: PluginRegistration, owner: string, r
   const [enableNeedsConfiguration, setEnableNeedsConfiguration] = useState(false);
   const [pendingAction, setPendingAction] = useState<PluginMutation | null>(null);
   const [remove, setRemove] = useState(false);
+
+  function setReview(next: typeof review) {
+    setError('');
+    setReviewState(next);
+  }
 
   function requestConfiguration() {
     setConfigurationRequested(true);
@@ -30,14 +35,13 @@ export function usePluginManagement(plugin: PluginRegistration, owner: string, r
   }
 
   function requestEnable() {
-    if (busy) return false;
+    if (busy) return;
     if (plugin.canReenable) {
       void mutate('enable', { approval: plugin.approval });
-      return false;
+      return;
     }
-    if (needsConfiguration()) { setEnableNeedsConfiguration(true); return false; }
+    if (needsConfiguration()) { setEnableNeedsConfiguration(true); return; }
     setReview('enable');
-    return true;
   }
 
   async function mutate(action: PluginMutation, input?: PluginInput) {
@@ -48,10 +52,12 @@ export function usePluginManagement(plugin: PluginRegistration, owner: string, r
     setPendingAction(action);
     setError('');
     setConfigurationSaved(false);
+    let succeeded = false;
     try {
       await plugins.mutate(owner, plugin.description.id, action, input);
+      succeeded = true;
       if (action === 'configuration') { setConfigurationSaved(true); setEnableNeedsConfiguration(false); setConfigurationAttempt((attempt) => attempt + 1); }
-      setReview(null); setRemove(false);
+      setRemove(false);
     } catch (failure) {
       // A response body can contain submitted configuration or secrets.
       const validationRejected = failure instanceof APIError && failure.status === 400;
@@ -67,7 +73,11 @@ export function usePluginManagement(plugin: PluginRegistration, owner: string, r
       if (action === 'configuration') setConfigurationAttempt((attempt) => attempt + 1);
     } finally {
       try { await refresh(); }
-      finally { setBusy(false); setPendingAction(null); }
+      finally {
+        if (succeeded) setReviewState(null);
+        setBusy(false);
+        setPendingAction(null);
+      }
     }
   }
   return { busy, error, review, setReview, requestEnable, configurationAttempt, configurationSaved, configurationFocus, configurationRequested,

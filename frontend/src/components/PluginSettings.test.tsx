@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithQuery as renderQuery } from '../test/renderWithQuery';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
@@ -137,6 +137,7 @@ it('uses shared controls for owner selection, lifecycle, configuration and confi
   expect(screen.getByRole('button', { name: 'Reset Token' })).toBeInTheDocument();
   click('Enable');
   expect(screen.getByRole('button', { name: 'Approve grants and enable' })).toHaveClass('oc-button--accent');
+  click('Cancel approval');
   click('Remove data');
   expect(screen.getByRole('button', { name: 'Confirm permanent removal' })).toHaveClass('oc-button--danger');
 });
@@ -186,7 +187,9 @@ it('requires explicit grant and checksum review before enabling', async () => {
   await open();
   click('Enable');
   expect(plugins.mutate).not.toHaveBeenCalled();
-  expect(screen.getByText(/Approve checksum/)).toHaveTextContent('abc123');
+  const review = screen.getByRole('dialog', { name: 'Review grants before enabling' });
+  expect(within(review).getByText(/Approve checksum/)).toHaveTextContent('abc123');
+  expect(screen.getAllByText('context.project', { exact: true })).toHaveLength(1);
   click('Cancel approval');
   expect(screen.queryByRole('button', { name: 'Approve grants and enable' })).not.toBeInTheDocument();
   click('Enable');
@@ -196,6 +199,42 @@ it('requires explicit grant and checksum review before enabling', async () => {
   click('Approve grants and enable');
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'enable', { approval: 'reviewed-registration', grants: ['context.project'] }));
   await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Enabled · Healthy'));
+});
+
+it('opens approval from Settings without leaving the tab or discarding a draft', async () => {
+  await open();
+  click('Configure');
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'draft' } });
+  const toggle = screen.getByRole('checkbox', { name: 'Enable Example' });
+  toggle.focus();
+  fireEvent.click(toggle);
+  expect(screen.getByRole('dialog', { name: 'Review grants before enabling' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Cancel approval' })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'Review grants before enabling' })).not.toBeInTheDocument();
+  expect(toggle).toHaveFocus();
+  expect(screen.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByLabelText('Name')).toHaveValue('draft');
+  expect(plugins.mutate).not.toHaveBeenCalled();
+});
+
+it('keeps approval open and prevents duplicate submission while enabling', async () => {
+  await open();
+  let finish!: (result: object) => void;
+  vi.mocked(plugins.mutate).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  click('Enable');
+  const review = within(screen.getByRole('dialog', { name: 'Review grants before enabling' }));
+  const approve = review.getByRole('button', { name: 'Approve grants and enable' });
+  fireEvent.click(approve);
+  expect(approve).toBeDisabled();
+  expect(review.getByRole('button', { name: 'Cancel approval' })).toBeDisabled();
+  expect(review.getByRole('status')).toHaveTextContent('Enabling plugin');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(approve);
+  expect(plugins.mutate).toHaveBeenCalledTimes(1);
+  await act(async () => finish({}));
+  expect(screen.queryByRole('dialog', { name: 'Review grants before enabling' })).not.toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Example' })).toBeVisible();
 });
 
 it.each(['toggle', 'button'])('re-enables with retained approvals from the %s without opening review', async (control) => {

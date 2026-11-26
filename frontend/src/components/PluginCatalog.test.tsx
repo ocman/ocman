@@ -180,7 +180,7 @@ it('shows plugin branding and a header toggle that still reviews enabling permis
   const dialog = await screen.findByRole('dialog', { name: 'Forgejo' });
   expect(dialog.querySelector('.bi-git')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Forgejo' }));
-  await waitFor(() => expect(screen.getByRole('tab', { name: 'Permissions' })).toHaveAttribute('aria-selected', 'true'));
+  expect(screen.getByRole('dialog', { name: 'Review grants before enabling' })).toBeVisible();
   expect(screen.getByText(/Approve checksum/)).toBeVisible();
   expect(plugins.mutate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Approve grants and enable' }));
@@ -220,7 +220,7 @@ it('keeps edits and the toggle off when enabling review is cancelled', async () 
   await screen.findByLabelText('Server URL');
   fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: 'https://unsaved.example.com' } });
   fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Forgejo' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Keep editing' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel approval' }));
   expect(screen.getByLabelText('Server URL')).toHaveValue('https://unsaved.example.com');
   expect(screen.getByRole('checkbox', { name: 'Enable Forgejo' })).not.toBeChecked();
   expect(screen.queryByText(/Approve checksum/)).not.toBeInTheDocument();

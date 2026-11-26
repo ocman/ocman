@@ -24,7 +24,7 @@ export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh, tab, d
   const management = usePluginManagement(plugin, owner, refresh, () => {
     if (view !== 'settings') setParams((previous) => { const next = new URLSearchParams(previous); next.set('pluginTab', 'settings'); return next; });
   });
-  const { busy, pendingAction } = management;
+  const { busy, pendingAction, review } = management;
   const { confirmDiscard } = useUnsavedChangesGuard(dirty);
   async function navigate(tab?: string) {
     if (busy || (dirty && !await confirmDiscard())) return false;
@@ -38,7 +38,7 @@ export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh, tab, d
     return true;
   }
   return <Drawer title={plugin.description.name} icon={<PluginNavIcon ownerId={owner} pluginId={plugin.description.id} icon={plugin.description.icon} />}
-    description={`${plugin.description.version} · Host: ${ownerName}`} onClose={() => void navigate()} canClose={!busy} closeLabel="Close plugin details">
+    description={`${plugin.description.version} · Host: ${ownerName}`} onClose={() => void navigate()} canClose={!busy && !review} closeLabel="Close plugin details">
     <div className={styles.detailSummary}>
       <PluginStatus plugin={plugin} />
       <div className={styles.quickActions}>
@@ -48,7 +48,7 @@ export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh, tab, d
             disabled={busy || (!plugin.enabled && (plugin.removed || plugin.health.status === 'conflict'))}
             onChange={() => {
               if (plugin.enabled) void management.mutate('disable');
-              else if (management.requestEnable()) void navigate('permissions').then((ok) => { if (!ok) management.setReview(null); });
+              else management.requestEnable();
             }} />
         </div>
       </div>

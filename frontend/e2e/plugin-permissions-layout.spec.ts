@@ -32,15 +32,18 @@ for (const width of [390, 768, 1440]) {
       });
       expect(bounds.valueTop).toBeGreaterThanOrEqual(bounds.labelBottom);
     }
-    await drawer.getByRole('button', { name: 'Enable', exact: true }).click();
-    await expect(drawer.getByText(/Approve checksum/)).toBeVisible();
     const overflow = await drawer.evaluate((element) => Array.from(element.querySelectorAll('*'))
       .filter((child) => child.clientWidth > 0 && child.scrollWidth > child.clientWidth + 1)
       .map((child) => child.tagName + '.' + child.className));
     expect(overflow).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('plugin-permissions.png'), fullPage: true });
-    await drawer.getByRole('button', { name: 'Approve grants and enable' }).scrollIntoViewIfNeeded();
-    await expect(drawer.getByRole('list', { name: 'Grants to approve' }).getByRole('listitem')).toHaveCount(grants.length);
+    await drawer.getByRole('button', { name: 'Enable', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Review grants before enabling' });
+    await expect(review.getByText(/Approve checksum/)).toBeVisible();
+    await expect(page.getByText('pane.project', { exact: true })).toHaveCount(1);
+    expect(await review.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await review.getByRole('button', { name: 'Approve grants and enable' }).scrollIntoViewIfNeeded();
+    await expect(review.getByRole('list', { name: 'Grants to approve' }).getByRole('listitem')).toHaveCount(grants.length);
     await page.screenshot({ path: testInfo.outputPath('plugin-approval.png'), fullPage: true });
   });
 }
