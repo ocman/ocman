@@ -12,6 +12,7 @@ import { RoutineStats } from './RoutineStats';
 import type { WebhookInbox } from '../lib/api.types';
 import { api, type Routine, type RoutineRun } from '../lib/api';
 import { formatDateTimeShort } from '../lib/format';
+import { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard';
 import styles from './RoutineHistoryDrawer.module.css';
 
 const HISTORY_PAGE_SIZE = 50;
@@ -70,6 +71,11 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [
   const [settingsOpened, setSettingsOpened] = useState(tab === 'settings');
   if (tab === 'settings' && !settingsOpened) setSettingsOpened(true);
   const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const { confirmDiscard } = useUnsavedChangesGuard(dirty);
+  const requestClose = async () => {
+    if (!busy && (!dirty || await confirmDiscard())) onClose();
+  };
   const visible = useDocumentVisible();
   const [shown, setShown] = useState<Shown>({ runs: [], exhausted: false });
   const { runs, exhausted } = shown;
@@ -127,7 +133,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [
   };
 
   return (
-    <Drawer title={routine.name} onClose={onClose} canClose={!busy} closeLabel="Close routine history" backdropTestId="routine-drawer-backdrop">
+    <Drawer title={routine.name} onClose={() => void requestClose()} canClose={!busy} closeLabel="Close routine history" backdropTestId="routine-drawer-backdrop">
       <Tabs value={tab} onValueChange={(value) => { setLocalTab(value); onTabChange?.(value); }}>
         <TabsList aria-label="Routine details"><TabsTrigger value="history" disabled={busy}>History</TabsTrigger><TabsTrigger value="settings" disabled={busy}>Settings</TabsTrigger><TabsTrigger value="stats" disabled={busy}>Stats</TabsTrigger></TabsList>
         <TabsContent value="history">
@@ -144,7 +150,7 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose, inboxes = [
           </div>
         </TabsContent>
         <TabsContent value="settings" forceMount hidden={tab !== 'settings'}>
-          {(settingsOpened || tab === 'settings') && <RoutineEditorForm routine={routine} inboxes={inboxes} onClose={onClose} onBusyChange={setBusy} onRefresh={onRefresh} onSaved={saved} />}
+          {(settingsOpened || tab === 'settings') && <RoutineEditorForm routine={routine} inboxes={inboxes} onClose={() => void requestClose()} onBusyChange={setBusy} onDirtyChange={setDirty} onRefresh={onRefresh} onSaved={saved} />}
         </TabsContent>
         <TabsContent value="stats"><RoutineStats routineId={routine.id} refreshKey={refreshKey} /></TabsContent>
       </Tabs>

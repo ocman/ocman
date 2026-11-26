@@ -1,9 +1,75 @@
 import { test, expect } from './fixtures';
 
+const savedRoutine = { id: 'unbound', name: 'Review PR', prompt: 'Review the PR', directory: '', remoteId: 'local', sessionMode: 'new', sessionId: '', scheduleKind: 'none', scheduleConfigJSON: '{}', permissionRulesJSON: '[]', enabled: true, createdAt: 1, updatedAt: 1 };
+
+test('keeps unsaved routine edits when discard is cancelled', async ({ mockedPage: page }) => {
+  await page.route('/api/routines', route => route.fulfill({ json: [] }));
+  await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
+  await page.goto('/routines');
+  await page.getByRole('button', { name: 'New routine' }).click();
+  const editor = page.getByRole('dialog', { name: 'New routine' });
+  await editor.getByLabel('Prompt').fill('Check the release');
+  await editor.getByRole('button', { name: 'Close routine form' }).click();
+  const discard = page.getByRole('dialog', { name: /discard/i });
+  await expect(discard).toBeVisible();
+  await discard.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(editor.getByLabel('Prompt')).toHaveValue('Check the release');
+  await page.keyboard.press('Escape');
+  await discard.getByRole('button', { name: /discard/i }).click();
+  await expect(editor).toBeHidden();
+});
+
+test('offers a touch-sized Run action inside the viewport at 320px', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.route('/api/routines', route => route.fulfill({ json: [savedRoutine] }));
+  await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
+  await page.goto('/routines');
+  const run = page.getByRole('button', { name: 'Run', exact: true });
+  await expect(run).toBeInViewport({ ratio: 1 });
+  const bounds = (await run.boundingBox())!;
+  expect(bounds.width).toBeGreaterThanOrEqual(44);
+  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  await run.click();
+  await expect(page.getByRole('dialog', { name: 'Run routine' })).toBeVisible();
+});
+
+test('names the routine in its delete confirmation and focuses Cancel', async ({ mockedPage: page }) => {
+  let deleted = false;
+  await page.route('/api/routines', route => route.fulfill({ json: deleted ? [] : [savedRoutine] }));
+  await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
+  await page.route('/api/routines/unbound', route => {
+    expect(route.request().method()).toBe('DELETE');
+    deleted = true;
+    return route.fulfill({ status: 204 });
+  });
+  await page.goto('/routines');
+  const remove = page.getByRole('button', { name: 'Delete', exact: true });
+  await remove.click();
+  const dialog = page.getByRole('dialog', { name: /delete.*review pr/i });
+  await expect(dialog).toContainText('Review PR');
+  const cancel = dialog.getByRole('button', { name: 'Cancel' });
+  await expect(cancel).toBeFocused();
+  await cancel.click();
+  await expect(remove).toBeVisible();
+  expect(deleted).toBe(false);
+  await remove.click();
+  await dialog.getByRole('button', { name: 'Delete routine' }).click();
+  await expect(page.getByRole('heading', { name: 'No routines yet' })).toBeVisible();
+});
+
+test('preserves unrelated query parameters when changing routine tabs', async ({ mockedPage: page }) => {
+  await page.route('/api/routines', route => route.fulfill({ json: [] }));
+  await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
+  await page.goto('/routines?remoteId=local&source=audit');
+  await page.getByRole('tab', { name: 'Webhook inboxes' }).click();
+  await expect(page).toHaveURL(url => url.searchParams.get('tab') === 'inboxes' && url.searchParams.get('remoteId') === 'local' && url.searchParams.get('source') === 'audit');
+  await page.getByRole('tab', { name: 'Routines', exact: true }).click();
+  await expect(page).toHaveURL(url => !url.searchParams.has('tab') && url.searchParams.get('remoteId') === 'local' && url.searchParams.get('source') === 'audit');
+});
+
 test('chooses a project when launching an unbound routine', async ({ mockedPage: page }) => {
-  const routine = { id: 'unbound', name: 'Review PR', prompt: 'Review the PR', directory: '', remoteId: 'local', sessionMode: 'new', sessionId: '', scheduleKind: 'none', scheduleConfigJSON: '{}', permissionRulesJSON: '[]', enabled: true, createdAt: 1, updatedAt: 1 };
   let selectedProject = '';
-  await page.route('/api/routines', route => route.fulfill({ json: [routine] }));
+  await page.route('/api/routines', route => route.fulfill({ json: [savedRoutine] }));
   await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
   await page.route('/api/routines/unbound/run', route => {
     selectedProject = route.request().postDataJSON().project;

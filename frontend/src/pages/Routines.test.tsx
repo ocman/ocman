@@ -6,13 +6,14 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
-import { renderWithQuery } from '../test/renderWithQuery';
+import { renderWithQuery as renderQuery } from '../test/renderWithQuery';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
-import { StrictMode } from 'react';
+import { StrictMode, type ReactElement } from 'react';
 import { formatDateTimeShort } from '../lib/format';
 import type { PlatformCapabilityEntry, RoutineRun, WebhookInbox } from '../lib/api.types';
 import { useMachinePlatforms } from '../lib/useCapabilities';
 import { ROUTINES_POLL_MS } from '../lib/routineQueries';
+import { ConfirmProvider } from '../components/ConfirmDialog';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: vi.fn(() => []) }));
@@ -35,6 +36,14 @@ function LocationProbe() {
   const location = useLocation();
   const navigate = useNavigate();
   return <><output data-testid="location">{location.pathname}{location.search}</output><button onClick={() => navigate(-1)}>Back</button></>;
+}
+
+function withConfirm(ui: ReactElement) {
+  return <ConfirmProvider>{ui}</ConfirmProvider>;
+}
+
+function renderWithQuery(ui: ReactElement) {
+  return renderQuery(withConfirm(ui));
 }
 
 describe('Routines', () => {
@@ -233,7 +242,7 @@ describe('Routines', () => {
 
   it('replays the initial history request after StrictMode aborts the first', async () => {
     vi.mocked(api.routines.history).mockReturnValueOnce(new Promise(() => {}));
-    render(<StrictMode><MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={0} onClose={vi.fn()} /></MemoryRouter></StrictMode>);
+    render(<StrictMode>{withConfirm(<MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={0} onClose={vi.fn()} /></MemoryRouter>)}</StrictMode>);
     expect(await screen.findByText('manual')).toBeInTheDocument();
     expect(api.routines.history).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api.routines.history).mock.calls[0][2]?.aborted).toBe(true);
@@ -267,8 +276,8 @@ describe('Routines', () => {
       const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
       return all.slice(from, from + page.limit);
     });
-    const drawer = (refreshKey: number) => <MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={refreshKey} onClose={vi.fn()} /></MemoryRouter>;
-    const view = renderWithQuery(drawer(0));
+    const drawer = (refreshKey: number) => withConfirm(<MemoryRouter><RoutineHistoryDrawer routine={routine} refreshKey={refreshKey} onClose={vi.fn()} /></MemoryRouter>);
+    const view = renderQuery(drawer(0));
     try {
       await userEvent.click(await screen.findByRole('button', { name: 'Load older runs' }));
       await screen.findByText('running');
@@ -723,16 +732,63 @@ describe('Routines', () => {
   });
 
   it('confirms before deleting a routine', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     const user = userEvent.setup();
     renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
 
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
-    expect(confirm).toHaveBeenCalledWith('Delete "Morning check"?');
+    const dialog = () => within(screen.getByRole('dialog', { name: 'Delete "Morning check"?' }));
+    const cancel = dialog().getByRole('button', { name: 'Cancel' });
+    expect(cancel).toHaveFocus();
+    await user.click(cancel);
     expect(api.routines.remove).not.toHaveBeenCalled();
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
+    await user.click(dialog().getByRole('button', { name: 'Delete routine' }));
     await waitFor(() => expect(api.routines.remove).toHaveBeenCalledWith(routine.id));
+  });
+
+  it('protects dirty settings even when closing from the history tab', async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?routine=routine-1&view=settings']}><LocationProbe /><Routines /></MemoryRouter>);
+    fireEvent.change(await screen.findByLabelText('Prompt'), { target: { value: 'Unsaved prompt' } });
+    await user.click(screen.getByRole('tab', { name: 'History' }));
+    await user.click(screen.getByRole('button', { name: 'Close routine history' }));
+    const discard = () => within(screen.getByRole('dialog', { name: 'Discard unsaved changes?' }));
+    await user.click(discard().getByRole('button', { name: 'Keep editing' }));
+    expect(screen.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect(screen.getByLabelText('Prompt')).toHaveValue('Unsaved prompt');
+    await user.click(screen.getByRole('button', { name: 'Close routine history' }));
+    await user.click(discard().getByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/routines$/));
+  });
+
+  it('guards an unsaved new routine until its edits are reverted or discarded', async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(screen.getByRole('button', { name: 'New routine' }));
+    const editor = () => within(screen.getByRole('dialog', { name: 'New routine' }));
+    const attemptUnload = () => window.dispatchEvent(new Event('beforeunload', { cancelable: true }));
+    expect(attemptUnload()).toBe(true);
+    fireEvent.change(editor().getByLabelText('Prompt'), { target: { value: 'Unsaved prompt' } });
+    expect(attemptUnload()).toBe(false);
+    await user.click(editor().getByRole('button', { name: 'Cancel' }));
+    const discard = within(screen.getByRole('dialog', { name: 'Discard unsaved changes?' }));
+    await user.click(discard.getByRole('button', { name: 'Keep editing' }));
+    expect(editor().getByLabelText('Prompt')).toHaveValue('Unsaved prompt');
+    await user.clear(editor().getByLabelText('Prompt'));
+    expect(attemptUnload()).toBe(true);
+    await user.click(editor().getByRole('button', { name: 'Close routine form' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('changes only owned query parameters when switching main tabs', async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?remoteId=local&tag=a&tag=b&routine=missing&view=stats']}><LocationProbe /><Routines /></MemoryRouter>);
+    await user.click(screen.getByRole('tab', { name: 'Webhook inboxes' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/routines?remoteId=local&tag=a&tag=b&tab=inboxes');
+    await user.click(screen.getByRole('tab', { name: 'Routines' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/routines\?remoteId=local&tag=a&tag=b$/);
   });
 
   it('surfaces load and action errors', async () => {

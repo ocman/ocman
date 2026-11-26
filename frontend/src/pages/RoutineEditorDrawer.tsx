@@ -16,6 +16,7 @@ import { saveTrigger, triggerFor, type Trigger } from '../lib/webhookFilters';
 import { cleanTitle } from '../lib/format';
 import { useRoutineFormLookups } from '../lib/routineQueries';
 import { useNamedModelCatalog } from '../lib/useNamedModelCatalog';
+import { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard';
 import styles from './RoutineEditorDrawer.module.css';
 
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -74,25 +75,35 @@ function sessionKey(remoteId: string, id: string) {
 type EditorProps = {
   routine?: Routine; inboxes: WebhookInbox[]; onClose: () => void; onSaved: () => void; onRefresh: () => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 export function RoutineEditorDrawer(props: EditorProps) {
   const [busy, setBusy] = useState(false);
-  return <Drawer title="New routine" onClose={props.onClose} canClose={!busy} closeLabel="Close routine form" backdropTestId="routine-drawer-backdrop">
-    <RoutineEditorForm {...props} onBusyChange={setBusy} />
+  const [dirty, setDirty] = useState(false);
+  const { confirmDiscard } = useUnsavedChangesGuard(dirty);
+  const close = async () => {
+    if (!busy && (!dirty || await confirmDiscard())) props.onClose();
+  };
+  return <Drawer title="New routine" onClose={() => void close()} canClose={!busy} closeLabel="Close routine form" backdropTestId="routine-drawer-backdrop">
+    <RoutineEditorForm {...props} onClose={() => void close()} onBusyChange={setBusy} onDirtyChange={setDirty} />
   </Drawer>;
 }
 
-export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefresh, onBusyChange }: EditorProps) {
+export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefresh, onBusyChange, onDirtyChange }: EditorProps) {
   const [form, setForm] = useState<FormState>(() => routine ? formFor(routine) : emptyForm());
   const [editing, setEditing] = useState(routine?.id);
   const [rules, setRules] = useState(() => routine ? parsePermissionRules(routine.permissionRulesJSON) : []);
   const [trigger, setTrigger] = useState<Trigger>(() => triggerFor(routine?.id, inboxes));
+  const snapshot = JSON.stringify([form, rules, trigger]);
+  const [initial] = useState(snapshot);
+  const dirty = snapshot !== initial;
   const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as SessionModelEntry[], platform: '' });
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
 
   const { projects, sessions, sessionsLoading, lookupError } = useRoutineFormLookups(form.directory);

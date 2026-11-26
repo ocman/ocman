@@ -17,10 +17,12 @@ import { WebhookInboxDrawer } from './WebhookInboxDrawer';
 import { triggerLabel } from '../lib/webhookFilters';
 import { formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
+import { useConfirm } from '../lib/useConfirm';
 import styles from './Routines.module.css';
 
 export function Routines() {
   usePageTitle('Routines');
+  const confirm = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
   // Both lists poll while the page is visible (react-query pauses hidden tabs).
@@ -34,6 +36,14 @@ export function Routines() {
     if (id) { next.set('routine', id); if (view !== 'history') next.set('view', view); }
     return next;
   });
+  const selectTab = (value: string) => setSearchParams((previous) => {
+    const next = new URLSearchParams(previous);
+    next.delete('routine');
+    next.delete('view');
+    if (value === 'inboxes') next.set('tab', value);
+    else next.delete('tab');
+    return next;
+  }, { replace: true });
   const [showForm, setShowForm] = useState(false);
   const [runRoutine, setRunRoutine] = useState<Routine>();
   const [busy, setBusy] = useState(false);
@@ -66,10 +76,18 @@ export function Routines() {
     catch (err) { setError(err instanceof Error ? err.message : 'Routine action failed.'); }
     finally { setBusy(false); }
   };
+  const deleteRoutine = async (routine: Routine) => {
+    if (await confirm({
+      title: `Delete "${routine.name}"?`,
+      description: 'Future runs will stop. Run history is retained.',
+      confirmLabel: 'Delete routine',
+      destructive: true,
+    })) await act(() => api.routines.remove(routine.id));
+  };
   const historyRoutine = routines.find((routine) => routine.id === historyId);
 
   return <main className={styles.page}>
-    <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'inboxes' ? { tab: value } : {}, { replace: true })} className={styles.tabs}>
+    <Tabs value={tab} onValueChange={selectTab} className={styles.tabs}>
       <TabsList aria-label="Routine views"><TabsTrigger value="routines">Routines</TabsTrigger><TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger></TabsList>
       {error && !showForm && !unavailable && <InlineAlert onRetry={retry} retrying={routineList.isFetching || inboxList.isFetching}>{error}</InlineAlert>}
       {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
@@ -83,15 +101,21 @@ export function Routines() {
         {routineList.isError && routineList.data === undefined ? <PageState error title="Routines are unavailable" description={routineList.error.message} onRetry={retry} retrying={routineList.isFetching} />
           : routineList.isPending ? <SkeletonTable columns={['Name', 'Project', 'Session', 'Trigger', 'Last run', 'Status', 'Actions']} rows={3} label="Loading routines" />
           : routines.length === 0 ? <PageState icon="bi-clock-history" title="No routines yet" description="Save a prompt to run manually, on a schedule, or when a webhook arrives."><Button type="button" variant="accent" onClick={openCreate}>Create a routine</Button></PageState> : (
-          <section className={styles.list} aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
+          <section className={styles.list} aria-label="Saved routines"><DataTable framed className={styles.routineTable} role="table"><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Actions</th></tr></thead><tbody role="rowgroup">{routines.map((routine) => {
             const latest = routine.latestRun;
             const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
             const openHistory = () => selectRoutine(routine.id);
-            return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={openHistory} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openHistory(); } }}>
-              <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td>{routine.directory ? <ProjectLabel path={routine.directory} /> : 'Choose when running'}</td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{triggerLabel(routine, inboxes)}</td><td>{latest ? formatDateTimeShort(latest.startedAt || latest.createdAt) : '-'}</td><td><RoutineStateBadge state={status} /></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined>
-                <Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); if (!routine.directory) setRunRoutine(routine); else void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button>
+            return <tr role="row" key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={openHistory} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openHistory(); } }}>
+              <td role="cell" className={styles.name}><strong>{routine.name}</strong><small>{routine.prompt}</small></td>
+              <td role="cell" className={styles.project}>{routine.directory ? <ProjectLabel path={routine.directory} /> : 'Choose when running'}</td>
+              <td role="cell" className={styles.desktopDetail}>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td>
+              <td role="cell" className={styles.desktopDetail}>{triggerLabel(routine, inboxes)}</td>
+              <td role="cell" className={styles.desktopDetail}>{latest ? formatDateTimeShort(latest.startedAt || latest.createdAt) : '-'}</td>
+              <td role="cell" className={styles.status}><RoutineStateBadge state={status} /></td>
+              <td role="cell" className={styles.actions}><ButtonGroup label={`Actions for ${routine.name}`} joined>
+                <Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); if (!routine.directory) setRunRoutine(routine); else void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /><span className={styles.phoneRunLabel}>Run</span></Button>
                 <Button aria-label="Settings" title="Settings" size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openSettings(routine); }}><i className="bi bi-gear" aria-hidden="true" /></Button>
-                <Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}><i className="bi bi-trash" aria-hidden="true" /></Button>
+                <Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); void deleteRoutine(routine); }}><i className="bi bi-trash" aria-hidden="true" /></Button>
               </ButtonGroup></td>
             </tr>;
           })}</tbody></DataTable></section>
