@@ -377,7 +377,7 @@ describe('CommandPalette project mode', () => {
       expect(input).toHaveFocus();
     });
     expect(input).toHaveValue('/Users/peter/workspace/research/');
-    expect(screen.getByText('datastack')).toBeInTheDocument();
+    expect(await screen.findByText('datastack')).toBeInTheDocument();
 
     fireEvent.change(input, {
       target: { value: '/Users/peter/workspace/research/data' },
