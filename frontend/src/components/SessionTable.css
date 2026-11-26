@@ -29,7 +29,7 @@
   align-items: center;
   gap: 3px;
   padding-inline: 2px;
-  color: var(--warning);
+  color: var(--subtext1);
   font-size: 9px;
 }
 .git-status-pending[data-stale="true"] { color: var(--subtext0); }
