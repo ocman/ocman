@@ -55,11 +55,15 @@ func TestSessionPreviewStreamsOpenCodeV2TextBeforeIdle(t *testing.T) {
 			_, _ = io.WriteString(w, `[]`)
 		case "/api/session/" + session + "/message/answer":
 			_, _ = io.WriteString(w, `{"data":{"id":"answer","type":"assistant","time":{"created":100},"content":[{"type":"text","text":""}]}}`)
+		case "/api/session/" + session + "/message":
+			_, _ = io.WriteString(w, `{"data":[{"id":"new-user","type":"user","text":"new prompt"},{"id":"previous-answer","type":"assistant","time":{"completed":90}},{"id":"previous-user","type":"user","text":"old prompt"}]}`)
 		case "/api/event":
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(w, "data: {\"id\":\"evt\",\"type\":\"server.connected\",\"data\":{}}\n\n")
 			w.(http.Flusher).Flush()
 			event("session.execution.started", "")
+			// Inbox delivery re-emits the recent transcript, not just the new prompt.
+			event("session.inbox.delivered", "")
 			event("session.step.started", `,"started":100`)
 			event("session.text.started", `,"ordinal":0`)
 			event("session.reasoning.delta", `,"ordinal":0,"delta":"private"`)
@@ -124,7 +128,7 @@ func TestSessionPreviewStreamsOpenCodeV2TextBeforeIdle(t *testing.T) {
 		return replies, nil
 	})
 
-	stop := m.watchSessionPreview(ctx, owner, "test", session, "", true)
+	stop := m.watchSessionPreview(ctx, owner, "test", session, map[string]struct{}{"previous-user": {}, "previous-answer": {}}, true)
 	defer stop()
 	for {
 		got := receivePreview(t, ctx, partials)

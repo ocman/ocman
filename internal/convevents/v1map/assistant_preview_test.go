@@ -6,7 +6,7 @@ import (
 )
 
 func TestAssistantPreviewIgnoresFollowupBootstrap(t *testing.T) {
-	p := AssistantPreview{SessionID: "s", PreviousMessageID: "old", MaxBytes: 64}
+	p := AssistantPreview{SessionID: "s", PreviousMessages: map[string]struct{}{"old": {}}, MaxBytes: 64}
 	for _, data := range []string{
 		`{"type":"message.updated","properties":{"info":{"id":"previous-prompt","role":"user","sessionID":"s"}}}`,
 		`{"type":"message.updated","properties":{"info":{"id":"old","role":"assistant","sessionID":"s"}}}`,
@@ -24,7 +24,7 @@ func TestAssistantPreviewIgnoresFollowupBootstrap(t *testing.T) {
 }
 
 func TestAssistantPreviewRequiresLiveVisibleAnchors(t *testing.T) {
-	p := AssistantPreview{SessionID: "s", PreviousMessageID: "old", MaxBytes: 5}
+	p := AssistantPreview{SessionID: "s", PreviousMessages: map[string]struct{}{"old": {}}, MaxBytes: 5}
 	for _, tc := range []struct {
 		name, frame, text string
 		done              bool

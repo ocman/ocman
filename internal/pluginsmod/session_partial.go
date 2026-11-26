@@ -33,7 +33,7 @@ func (m *Module) stopSessionPreview(platformID, sessionID string) {
 
 // watchSessionPreview gives the stream a short head start before sending the
 // prompt. An unavailable stream or slow handshake never fails admission.
-func (m *Module) watchSessionPreview(ctx context.Context, pluginID, platformID, sessionID, previous string, requested bool) context.CancelFunc {
+func (m *Module) watchSessionPreview(ctx context.Context, pluginID, platformID, sessionID string, previous map[string]struct{}, requested bool) context.CancelFunc {
 	noop := func() {}
 	if !requested || m.deps.Adapter == nil || !m.sessionCallbackAllowed(ctx, pluginID, plugins.SessionPartialAllowed) {
 		return noop
@@ -93,7 +93,7 @@ func (m *Module) watchSessionPreview(ctx context.Context, pluginID, platformID, 
 	return cancel
 }
 
-func (m *Module) streamSessionPreview(ctx context.Context, adapter platforms.Platform, key sessionPreviewKey, pluginID, previous string, ready func()) {
+func (m *Module) streamSessionPreview(ctx context.Context, adapter platforms.Platform, key sessionPreviewKey, pluginID string, previous map[string]struct{}, ready func()) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	wireID, err := pluginSessionReference(ctx, adapter, key.session)
@@ -107,7 +107,7 @@ func (m *Module) streamSessionPreview(ctx context.Context, adapter platforms.Pla
 		defer close(closed)
 		module.RunWithRecover("plugin-session-preview-source", func() {
 			writer := &sessionPreviewWriter{projection: v1map.AssistantPreview{
-				SessionID: key.session, PreviousMessageID: previous, MaxBytes: plugins.SessionMaxPartialBytes,
+				SessionID: key.session, PreviousMessages: previous, MaxBytes: plugins.SessionMaxPartialBytes,
 			}, updates: updates}
 			opened := false
 			err := adapter.ProxyEvents(ctx, key.session, &httpx.SSEFrameWriter{Dst: writer}, func() {

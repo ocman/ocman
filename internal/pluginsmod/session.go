@@ -233,7 +233,7 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 			}
 		}()
 	}
-	stopPreview := m.watchSessionPreview(ctx, pluginID, platformID, created.ID, "", params.Stream)
+	stopPreview := m.watchSessionPreview(ctx, pluginID, platformID, created.ID, nil, params.Stream)
 	if err := m.deps.Enqueue(ctx, platformID, false, platforms.SendMessageRequest{
 		SessionID: created.ID, Message: params.Prompt, Agent: params.Agent, Model: params.Model,
 	}); err != nil {

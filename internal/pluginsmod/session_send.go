@@ -81,7 +81,16 @@ func (m *Module) sendSession(ctx context.Context, pluginID string, params plugin
 	// Retain the session's existing creation identity and all pinned selections.
 	// Never create a session, reset permissions or send through another owner.
 	m.stopSessionPreview(platformID, sessionID)
-	stopPreview := m.watchSessionPreview(ctx, pluginID, platformID, sessionID, latest, params.Stream)
+	var previous map[string]struct{}
+	if params.Stream {
+		// Live inbox events may re-emit the recent transcript, including the
+		// previous user prompt. It must not count as the start of this turn.
+		previous = make(map[string]struct{}, len(detail.Messages))
+		for _, message := range detail.Messages {
+			previous[message.ID] = struct{}{}
+		}
+	}
+	stopPreview := m.watchSessionPreview(ctx, pluginID, platformID, sessionID, previous, params.Stream)
 	if err := m.deps.Enqueue(ctx, platformID, false, platforms.SendMessageRequest{SessionID: sessionID, Message: params.Prompt, PreserveSelections: true}); err != nil {
 		stopPreview()
 		return "", err

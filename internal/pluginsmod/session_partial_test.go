@@ -105,10 +105,10 @@ func TestSessionPreviewAndDurableCompletion(t *testing.T) {
 			install(m)
 			var turnID string
 			// The other plugin and the same ID on another platform own neither binding.
-			m.watchSessionPreview(ctx, "org.example.other", platform, session, "", true)
-			m.watchSessionPreview(ctx, owner, "different-platform", session, "", true)
+			m.watchSessionPreview(ctx, "org.example.other", platform, session, nil, true)
+			m.watchSessionPreview(ctx, owner, "different-platform", session, nil, true)
 			if tc.burst {
-				stop := m.watchSessionPreview(ctx, owner, platform, session, "", true)
+				stop := m.watchSessionPreview(ctx, owner, platform, session, nil, true)
 				defer stop()
 				<-opened
 				frames <- `data: {"type":"message.updated","properties":{"info":{"id":"answer","sessionID":"session-a","role":"assistant"}}}` + "\n\n" +
@@ -120,7 +120,7 @@ func TestSessionPreviewAndDurableCompletion(t *testing.T) {
 				}
 				turnID = p.TurnID
 			} else if tc.stream && capability == plugins.StreamingSessionCapability {
-				stop := m.watchSessionPreview(ctx, owner, platform, session, "", true)
+				stop := m.watchSessionPreview(ctx, owner, platform, session, nil, true)
 				defer stop()
 				if receivePreview(t, ctx, opened) != session {
 					t.Fatal("wrong stream opened")
@@ -155,7 +155,7 @@ func TestSessionPreviewAndDurableCompletion(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				m.watchSessionPreview(ctx, owner, platform, session, "", tc.stream)
+				m.watchSessionPreview(ctx, owner, platform, session, nil, tc.stream)
 			}
 			m.workers.Close()
 			if len(opened) != 0 || len(partials) != 0 {

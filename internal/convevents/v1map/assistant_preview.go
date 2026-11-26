@@ -6,14 +6,14 @@ import "strings"
 // does not use the browser mapper's permissive defaults for role or session.
 // A delta needs an explicit assistant message and a visible text part anchor.
 type AssistantPreview struct {
-	SessionID         string
-	PreviousMessageID string
-	MaxBytes          int
-	message           string
-	user              string
-	parts             []previewPart
-	bytes             int
-	blocked           bool
+	SessionID        string
+	PreviousMessages map[string]struct{} // transcript IDs known before this turn
+	MaxBytes         int
+	message          string
+	user             string
+	parts            []previewPart
+	bytes            int
+	blocked          bool
 }
 
 type previewPart struct{ id, text string }
@@ -33,7 +33,8 @@ func (p *AssistantPreview) Apply(f Frame) (message, text string, done bool) {
 	case "message.created", "message.updated":
 		info := props.obj("info")
 		id := info.str("id")
-		if info.str("sessionID") != p.SessionID || id == "" || id == p.PreviousMessageID {
+		_, previous := p.PreviousMessages[id]
+		if info.str("sessionID") != p.SessionID || id == "" || previous {
 			break
 		}
 		if info.str("role") == "user" && string(info["synthetic"]) != "true" {
