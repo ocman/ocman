@@ -5,3 +5,22 @@
 .path { display: flex; flex-direction: column; gap: 4px; }
 .project { color: var(--accent); font-weight: 500; }
 .content { display: grid; gap: 20px; }
+.phoneLabel { display: none; }
+
+@media (width <= 640px) {
+  .table { display: block; min-width: 0; }
+  .table > thead { display: none; }
+  .table > tbody { display: block; }
+  .table > tbody > tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 12px;
+    overflow-wrap: anywhere;
+  }
+  .table > tbody > tr + tr { border-top: 1px solid var(--border); }
+  .table > tbody > tr > td { padding: 0; border: 0; }
+  .phoneLabel { display: inline; color: var(--text-dim); }
+  .table .actions { flex-wrap: wrap; margin-top: 4px; white-space: normal; }
+  .actions button { min-height: 44px; }
+}

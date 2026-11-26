@@ -144,7 +144,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
       ) : rows.length === 0 ? (
         <PageState icon="bi-diagram-3" title="No worktrees found" description="Create a worktree session to work in a separate branch and checkout." />
       ) : (
-        <DataTable framed className={styles.table}>
+        <DataTable framed className={styles.table} role="table" aria-label="Worktrees">
           <thead>
             <tr>
               <th>Branch</th>
@@ -154,26 +154,27 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {rows.map(({ wt, stats }) => (
-                <tr key={wt.path}>
-                  <td>
+                <tr key={wt.path} role="row">
+                  <td role="cell">
                     <div className={styles.branch}>
                       <span>{wt.branch || '(detached)'}</span>
                       {wt.main && <span className={styles.chip}>main</span>}
                       {wt.locked && <span className={styles.chip}>locked</span>}
                     </div>
                   </td>
-                  <td>
+                  <td role="cell">
                     <div className={styles.path}>
                       <ProjectLabel path={wt.path} className={styles.project} />
                     </div>
                   </td>
-                  <td title={stats.sessions.map((s) => s.id).join(', ')}>
+                  <td role="cell" title={stats.sessions.map((s) => s.id).join(', ')}>
+                    <span className={styles.phoneLabel}>Sessions: </span>
                     {stats.sessions.length}
                   </td>
-                  <td>{stats.lastActivity ? relativeTime(stats.lastActivity) : '—'}</td>
-                  <td>
+                  <td role="cell"><span className={styles.phoneLabel}>Last activity: </span>{stats.lastActivity ? relativeTime(stats.lastActivity) : '—'}</td>
+                  <td role="cell">
                     <ButtonGroup label={`Actions for ${wt.branch || 'detached worktree'}`} className={styles.actions}>
                       <Button size="small"
                         type="button"

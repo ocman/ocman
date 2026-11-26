@@ -1,4 +1,27 @@
-import { test, expect, MOCK_PROJECT } from './fixtures';
+import { test, expect, MOCK_PROJECT, MOCK_SESSION } from './fixtures';
+
+test('project sessions show a retryable unavailable state after a 503', async ({ mockedPage: page }) => {
+  let unavailable = true;
+  await page.route(/\/api\/sessions(?:\?|$)/, route => unavailable
+    ? route.fulfill({ status: 503, json: { error: 'Session inventory unavailable' } })
+    : route.fulfill({ json: [MOCK_SESSION] }));
+  await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
+  const panel = page.getByRole('tabpanel', { name: 'Sessions' });
+  await expect(panel.getByRole('heading', { name: 'Sessions are unavailable' })).toBeVisible();
+  await expect(panel.getByText('No active sessions found')).toBeHidden();
+  unavailable = false;
+  await panel.getByRole('button', { name: 'Retry' }).click();
+  await expect(panel.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
+});
+
+test('clearing an unmatched project search keeps the owner and other URL context', async ({ mockedPage: page }) => {
+  await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}?remoteId=local&context=keep&t=0&a=1&q=zzzzzzzzzz`);
+  const panel = page.getByRole('tabpanel', { name: 'Sessions' });
+  await expect(panel.getByRole('heading', { name: 'No matching sessions' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page).toHaveURL(/\?remoteId=local&context=keep$/);
+  await expect(panel.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
+});
 
 for (const width of [1280, 390]) {
   test(`project settings share the owner defaults editor at ${width}px`, async ({ mockedPage: page }, testInfo) => {

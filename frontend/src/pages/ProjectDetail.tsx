@@ -9,8 +9,9 @@ import { useShortcut } from '../lib/shortcutRegistry';
 import { useProjects, useSessions } from '../lib/queries';
 import { useProjectIdentityIndex } from '../lib/useProjectIdentityIndex';
 import { useSessionAccounting } from '../lib/useSessionAccounting';
-import { SearchField } from '../components/Control';
+import { Button, SearchField } from '../components/Control';
 import { InlineAlert } from '../components/InlineAlert';
+import { PageState } from '../components/PageState';
 import styles from './ProjectDetail.module.css';
 import { ProjectShell } from './ProjectShell';
 
@@ -36,11 +37,19 @@ export function ProjectDetail() {
     (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey),
     { sinceHours }, !!directory);
   const sessionsLoaded = !sessionsQ.isLoading && !projectsQ.isLoading;
+  const retrySessions = () => { void sessionsQ.refetch(); };
   const search = searchParams.get('q') || '';
   const q = search.trim();
   const filteredSessions = q
     ? sessions.filter((s) => fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`))
     : sessions;
+  const clearFilters = () => setSearchParams((params) => {
+    const next = new URLSearchParams(params);
+    next.delete('q');
+    next.delete('t');
+    next.delete('a');
+    return next;
+  }, { replace: true });
 
   const directoryRef = useRef(directory);
   useEffect(() => { directoryRef.current = directory; }, [directory]);
@@ -73,12 +82,28 @@ export function ProjectDetail() {
       </div>
       <SessionRangeFilters label="Project session filters" className={styles.range} timeRange={timeRange} onTimeRangeChange={setTimeRange}
         showArchived={showArchived} onShowArchivedChange={setShowArchived} />
-      {activityQ.error && (
-        <InlineAlert onRetry={activityQ.retry} retrying={activityQ.retrying}>
-          Could not load session activity: {activityQ.error}
-        </InlineAlert>
+      {sessionsQ.isLoadingError ? (
+        <PageState error title="Sessions are unavailable" description={sessionsQ.error.message} onRetry={retrySessions} retrying={sessionsQ.isFetching} />
+      ) : (
+        <>
+          {sessionsQ.isRefetchError && (
+            <InlineAlert compact tone="warning" onRetry={retrySessions} retrying={sessionsQ.isFetching}>
+              Could not refresh sessions. Showing the last loaded results.
+            </InlineAlert>
+          )}
+          {activityQ.error && (
+            <InlineAlert onRetry={activityQ.retry} retrying={activityQ.retrying}>
+              Could not load session activity: {activityQ.error}
+            </InlineAlert>
+          )}
+          <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={showArchived} activityPendingKeys={activityPendingKeys}
+            emptyState={q ? (
+              <PageState icon="bi-search" title="No matching sessions" description="Try a different search or clear your filters.">
+                <Button type="button" onClick={clearFilters}>Clear filters</Button>
+              </PageState>
+            ) : undefined} />
+        </>
       )}
-      <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={showArchived} activityPendingKeys={activityPendingKeys} />
     </ProjectShell>
   );
 }

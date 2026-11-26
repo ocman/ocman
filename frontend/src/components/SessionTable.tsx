@@ -23,11 +23,12 @@ interface Props {
   showProject: boolean;
   loading?: boolean;
   includeArchived?: boolean;
+  /** Custom empty state, shown after applying row visibility rules. */
+  emptyState?: ReactNode;
   /** The caller already applied the shared archive/snooze/pending-prompt rules. */
   prefiltered?: boolean;
   /** Owner-qualified `${platform}:${id}` keys whose accounting is not ready. */
   activityPendingKeys?: ReadonlySet<string>;
-  emptyState?: ReactNode;
 }
 
 export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered, activityPendingKeys, emptyState }: Props) {

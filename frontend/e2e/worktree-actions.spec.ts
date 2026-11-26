@@ -1,4 +1,33 @@
-import { test, expect, MOCK_PROJECT } from './fixtures';
+import { test, expect, makeCapabilitiesWithPort, MOCK_PROJECT, MOCK_SESSION } from './fixtures';
+
+test('populated remote worktrees keep the open action in view at 320px', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  const project = MOCK_PROJECT.directory;
+  const remoteId = 'build-host';
+  const platform = `r-${remoteId}:opencode`;
+  const branch = 'feature/a-long-branch-name-without-spaces';
+  const path = `/home/user/.worktrees/myapp/${branch}`;
+  const capabilities = makeCapabilitiesWithPort();
+  capabilities.hosts.push({ ...capabilities.hosts[0], remoteId, remoteName: 'Build machine' });
+  await page.route('/api/capabilities', route => route.fulfill({ json: capabilities }));
+  await page.route('/api/projects', route => route.fulfill({ json: [{ ...MOCK_PROJECT, remoteId, remoteName: 'Build machine' }] }));
+  await page.route(/\/api\/sessions(?:\?|$)/, route => route.fulfill({ json: [
+    { ...MOCK_SESSION, id: 'remote-worktree', remoteId, platform, directory: path },
+    { ...MOCK_SESSION, id: 'local-worktree', remoteId: 'local', directory: path, timeUpdated: Date.now() },
+  ] }));
+  await page.route('**/api/worktree/list*', route => {
+    expect(new URL(route.request().url()).searchParams.get('remoteId')).toBe(remoteId);
+    return route.fulfill({ json: { worktrees: [{ path, branch, head: 'abc', bare: false, locked: false, main: false }] } });
+  });
+  await page.goto(`/project/${encodeURIComponent(project)}/worktrees?remoteId=${remoteId}`);
+  const open = page.getByRole('button', { name: 'Open session' });
+  await expect(open).toBeEnabled();
+  const box = (await open.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(320);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await open.click();
+  await expect(page).toHaveURL(/\/session\/remote-worktree\?platform=r-build-host%3Aopencode/);
+});
 
 for (const width of [1280, 390]) {
   test(`project and worktree actions stay usable at ${width}px`, async ({ mockedPage: page }, testInfo) => {
@@ -14,7 +43,10 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('tab', { name: 'Worktrees', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Worktrees', exact: true }).click();
     await expect(page.getByText('chore/shared-controls', { exact: true })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Actions for chore/shared-controls' })).toHaveCSS('white-space', 'nowrap');
+    if (width === 1280) {
+      await expect(page.getByRole('columnheader', { name: 'Branch' })).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Actions for chore/shared-controls' })).toHaveCSS('white-space', 'nowrap');
+    }
     await expect(page.getByRole('tab', { name: 'Sessions', exact: true })).toBeVisible();
     const bounds = await page.getByRole('button', { name: 'New worktree session', exact: true }).boundingBox();
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
