@@ -54,6 +54,11 @@ func (m *Module) pending(ctx context.Context, now time.Time) (*usagewire.Report,
 }
 
 func (m *Module) clearPending(ctx context.Context) error {
+	_, err := m.deps.Store.SQL().ExecContext(ctx, `UPDATE usage_collection SET pending_date='' WHERE id=1`)
+	return err
+}
+
+func (m *Module) clearOptedOutUsage(ctx context.Context) error {
 	_, err := m.deps.Store.SQL().ExecContext(ctx, `UPDATE usage_collection SET pending_date='',daily_from='' WHERE id=1`)
 	return err
 }

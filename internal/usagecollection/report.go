@@ -39,7 +39,7 @@ func (m *Module) sendPending(ctx context.Context) {
 	enabled, err := m.enabled(ctx)
 	if err != nil || !enabled {
 		if err == nil {
-			_ = m.clearPending(ctx)
+			_ = m.clearOptedOutUsage(ctx)
 		}
 		m.mu.Unlock()
 		return

@@ -58,7 +58,7 @@ func (m *Module) settings(w http.ResponseWriter, r *http.Request) {
 			if m.cancel != nil {
 				m.cancel()
 			}
-			if err := m.clearPending(r.Context()); err != nil {
+			if err := m.clearOptedOutUsage(r.Context()); err != nil {
 				httpx.ServerError(w, "clearing pending usage", err)
 				return
 			}
