@@ -10,11 +10,14 @@ for (const width of [1280, 390]) {
     await page.goto('/projects');
     const alert = page.getByRole('alert').filter({ hasText: 'Could not load projects' });
     await expect(alert).toBeVisible();
+    await expect(alert.getByRole('heading', { name: 'Projects are unavailable' })).toBeVisible();
     await expect(page.getByTestId('getting-started-empty')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(0);
     const retry = alert.getByRole('button', { name: 'Retry', exact: true });
-    await expect(retry).toHaveCSS('font-size', '12px');
+    expect(await alert.evaluate(el => el.scrollWidth)).toBeLessThanOrEqual(await alert.evaluate(el => el.clientWidth));
     failed = false;
-    await retry.click();
+    await retry.focus();
+    await retry.press('Enter');
     await expect(alert).toBeHidden();
     await expect(page.getByRole('link', { name: /projects\/myapp/ })).toBeVisible();
   });
