@@ -7,7 +7,9 @@
   overflow: hidden;
   background: var(--mantle);
   border-right: 1px solid var(--border);
-  transition: width 0.16s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .main-nav { transition: width 0.16s ease; }
 }
 .main-nav.collapsed { width: 52px; }
 .main-nav-logo {

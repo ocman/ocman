@@ -13,6 +13,30 @@ const rows = [
   { ...MOCK_SESSION, id: 'prompt', title: 'Pending prompt work', routineId: 'routine-1', archived: true, pendingQuestion: true },
 ];
 
+test('phone session filters stay usable after a height-only resize', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/sessions');
+  const trigger = page.getByRole('button', { name: 'Filter sessions' });
+  const filters = page.getByRole('dialog', { name: 'Session filters' });
+  await trigger.click();
+  await expect(filters).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 540 });
+  await expect(filters).toBeVisible();
+  const archived = filters.getByRole('checkbox', { name: 'Show archived' });
+  await archived.check();
+  await expect(archived).toBeChecked();
+  expect(await filters.evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(540);
+  await page.keyboard.press('Escape');
+  await expect(filters).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await expect(filters).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 540 });
+  await expect(filters).toHaveCount(0);
+});
+
 test('session list retains category preferences while sidebar shares only history and prompt filters', async ({ mockedPage: page }) => {
   await page.route('/api/sessions*', route => route.fulfill({ json: rows }));
   await page.setViewportSize({ width: 390, height: 844 });

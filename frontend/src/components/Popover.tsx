@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import './Popover.css';
 
 /** Shared non-modal popover shell. Callers position it beside their trigger. */
-export function Popover({ open, onClose, triggerRef, id, label, className = '', style, autoFocus = true, children }: {
+export function Popover({ open, onClose, triggerRef, id, label, className = '', style, autoFocus = true, onHeightResize, children }: {
   open: boolean;
   onClose: () => void;
   triggerRef: RefObject<HTMLElement | null>;
@@ -12,17 +12,29 @@ export function Popover({ open, onClose, triggerRef, id, label, className = '', 
   className?: string;
   style?: CSSProperties;
   autoFocus?: boolean;
+  /** Reposition instead of closing when only the viewport height changes. */
+  onHeightResize?: () => void;
   children: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const close = useEffectEvent(onClose);
+  const onResize = useEffectEvent((widthChanged: boolean, heightChanged: boolean) => {
+    if (widthChanged || !onHeightResize) onClose();
+    else if (heightChanged) onHeightResize();
+  });
   useEffect(() => {
     if (!open) return;
     if (autoFocus) panel.current?.focus();
     const outside = (event: MouseEvent) => {
       if (!triggerRef.current?.contains(event.target as Node) && !panel.current?.contains(event.target as Node)) close();
     };
-    const resize = () => close();
+    const width = window.innerWidth;
+    let height = window.innerHeight;
+    const resize = () => {
+      const nextHeight = window.innerHeight;
+      onResize(window.innerWidth !== width, nextHeight !== height);
+      height = nextHeight;
+    };
     const escape = (event: KeyboardEvent) => {
       // A nested picker handles its first Escape; the next closes the popover.
       if (event.key === 'Escape' && !panel.current?.querySelector('[role="combobox"][aria-expanded="true"]')) {

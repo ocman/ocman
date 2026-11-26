@@ -57,23 +57,29 @@ test('Alt+Space opens the command palette', async ({ mockedPage: page }) => {
   await expect(page.locator('.oc-cmd-palette')).toBeVisible({ timeout: 3_000 });
 });
 
-test('ESC closes the command palette', async ({ mockedPage: page }) => {
+test('Escape closes the command palette and restores focus', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.locator('body').click();
+  const origin = page.getByRole('button', { name: 'Collapse navigation' });
+  await origin.focus();
   await page.keyboard.press('Alt+Space');
-  await expect(page.locator('.oc-cmd-palette')).toBeVisible({ timeout: 3_000 });
+  const input = page.getByRole('combobox', { name: 'Search commands and sessions' });
+  await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.locator('.oc-cmd-backdrop')).toHaveCount(0);
+  await expect(input).toHaveCount(0);
+  await expect(origin).toBeFocused();
 });
 
 test('clicking backdrop closes the palette', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.locator('body').click();
+  const origin = page.getByRole('button', { name: 'Collapse navigation' });
+  await origin.focus();
   await page.keyboard.press('Alt+Space');
-  await expect(page.locator('.oc-cmd-palette')).toBeVisible({ timeout: 3_000 });
+  const input = page.getByRole('combobox', { name: 'Search commands and sessions' });
+  await expect(input).toBeFocused();
   // Click on the backdrop (outside the palette box)
   await page.locator('.oc-cmd-backdrop').click({ position: { x: 10, y: 10 } });
-  await expect(page.locator('.oc-cmd-backdrop')).toHaveCount(0);
+  await expect(input).toHaveCount(0);
+  await expect(origin).toBeFocused();
 });
 
 // ---------------------------------------------------------------------------
@@ -137,10 +143,14 @@ test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) 
     return route.fulfill({ status: 409, json: { error: 'Test submission' } });
   });
   await page.goto('/sessions');
-  await openPaletteStore(page);
-  await page.fill('.oc-cmd-input', '>wt');
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'New worktree session', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Collapse navigation' }).focus();
+  await page.keyboard.press('Alt+Space');
+  const input = page.getByRole('combobox', { name: 'Search commands and sessions' });
+  await input.fill('>wt');
+  await input.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'New worktree session', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
   await expect(page.getByRole('heading', { name: 'New worktree session', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Project', exact: true }).click();
   await page.getByRole('option', { name: '/home/user/projects/myapp', exact: true }).click();
@@ -224,6 +234,20 @@ test('ArrowUp stays at first item when already at top', async ({ mockedPage: pag
 // ---------------------------------------------------------------------------
 // Activation via Enter
 // ---------------------------------------------------------------------------
+
+test('Enter commits IME text without activating the selected command', async ({ mockedPage: page }) => {
+  await page.goto('/sessions');
+  await page.getByRole('button', { name: 'Collapse navigation' }).focus();
+  await page.keyboard.press('Alt+Space');
+  const input = page.getByRole('combobox', { name: 'Search commands and sessions' });
+  await input.fill('usage');
+  await expect(page.getByRole('option', { name: /usage/i, selected: true })).toBeVisible();
+  await input.dispatchEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true });
+  await expect(input).toBeFocused();
+  await expect(page).toHaveURL('/sessions');
+  await input.press('Enter');
+  await expect(page).toHaveURL('/analytics/overview');
+});
 
 test('pressing Enter on a legacy command navigates to its Analytics section', async ({ mockedPage: page }) => {
   await page.goto('/sessions');

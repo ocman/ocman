@@ -6,12 +6,13 @@ import { expect, it, vi } from 'vitest';
 import { Popover } from './Popover';
 import { SearchSelect } from './SearchSelect';
 
-function Example({ onClose = () => {} }: { onClose?: () => void }) {
+function Example({ onClose = () => {}, onHeightResize }: { onClose?: () => void; onHeightResize?: () => void }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return <>
     <button ref={trigger} onClick={() => setOpen(!open)}>Open popover</button>
-    <Popover id="example-popover" label="Example" open={open} triggerRef={trigger} onClose={() => { setOpen(false); onClose(); }}>
+    <Popover id="example-popover" label="Example" open={open} triggerRef={trigger} onHeightResize={onHeightResize}
+      onClose={() => { setOpen(false); onClose(); }}>
       <SearchSelect value="" options={[]} ariaLabel="Choice" placeholder="Pick" searchLabel="Search choices" onChange={() => {}} />
       <button>Inside</button>
     </Popover>
@@ -61,4 +62,25 @@ it('dismisses outside clicks and resize, and removes listeners when unmounted', 
   act(() => window.dispatchEvent(new Event('resize')));
   await userEvent.click(document.body);
   expect(onClose).toHaveBeenCalledTimes(2);
+});
+
+it('lets opted-in callers reposition on height-only resize but closes on width change', async () => {
+  const onHeightResize = vi.fn();
+  try {
+    vi.stubGlobal('innerWidth', 390);
+    vi.stubGlobal('innerHeight', 844);
+    render(<Example onHeightResize={onHeightResize} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Open popover' }));
+    vi.stubGlobal('innerHeight', 540);
+    act(() => window.dispatchEvent(new Event('resize')));
+    expect(onHeightResize).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toHaveFocus();
+
+    vi.stubGlobal('innerWidth', 640);
+    act(() => window.dispatchEvent(new Event('resize')));
+    expect(onHeightResize).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

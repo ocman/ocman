@@ -17,6 +17,7 @@ import { sessionProjectDirectory } from '../lib/oneOffProject';
 import { useOneOffProjects } from '../lib/useOneOffProjects';
 import { rankPaletteProjects } from './paletteProjectSearch';
 import { rankPaletteSessions, usePaletteContentSearch, type PaletteSession } from './paletteSessionSearch';
+import { usePaletteFocus } from './usePaletteFocus';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string; run?: () => void };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -155,7 +156,6 @@ export function CommandPalette() {
   const [fallbackIndex, setFallbackIndex] = useState(0);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const explicitlySelectedProject = useRef(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // Results are a listbox driven from the input (combobox +
   // aria-activedescendant): focus stays in the search field, which the
@@ -174,6 +174,7 @@ export function CommandPalette() {
   const launchAllowed = useWorktreeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const paletteOpen = useUiStore((s) => s.paletteOpen);
+  const { inputRef, focusInput, restoreFocus } = usePaletteFocus();
   const paletteMode = useUiStore((s) => s.paletteMode);
   const projectSessionInitialDirectory = useUiStore((s) => s.projectSessionInitialDirectory);
   const projectSessionInitialRemoteId = useUiStore((s) => s.projectSessionInitialRemoteId);
@@ -209,11 +210,12 @@ export function CommandPalette() {
     setProjectBrowser(CLOSED_PROJECT_BROWSER);
   }, []);
 
-  const closePalette = useCallback(() => {
+  const closePalette = useCallback((dismiss = false) => {
     setWorktreeError(null);
     resetProjectBrowser();
     rawClosePalette();
-  }, [rawClosePalette, resetProjectBrowser, setWorktreeError]);
+    if (dismiss) restoreFocus();
+  }, [rawClosePalette, resetProjectBrowser, restoreFocus, setWorktreeError]);
 
   const openProjectBrowser = useCallback((directory?: string, opts?: { query?: string }) => {
     projectBrowserAbortRef.current?.abort();
@@ -266,7 +268,7 @@ export function CommandPalette() {
           searchLoading: false,
         }));
       });
-  }, [browseDirectories]);
+  }, [browseDirectories, inputRef]);
 
   // Best-effort project inference for `cmd.worktree` so invoking /wt
   // from a project page or session page pre-fills the project field.
@@ -620,14 +622,14 @@ export function CommandPalette() {
   function onInputKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
-      closePalette();
+      closePalette(true);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       selectIndex(Math.min(selectedIndex + 1, results.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       selectIndex(Math.max(selectedIndex - 1, 0));
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (results[selectedIndex]) {
         handleSelect(results[selectedIndex]);
@@ -642,13 +644,12 @@ export function CommandPalette() {
     mode === 'project' && projectBrowser.open && isCurrentDirectoryQuery(query, projectBrowser.directory);
 
   return (
-    <div className="oc-cmd-backdrop" onClick={closePalette}>
+    <div className="oc-cmd-backdrop" onClick={() => closePalette(true)}>
       <div className="oc-cmd-palette" data-perf="palette" onClick={(e) => e.stopPropagation()}>
         <div className="oc-cmd-input-wrap">
           <i className="bi bi-search oc-cmd-search-icon" />
           <input
-            ref={inputRef}
-            autoFocus
+            ref={focusInput}
             className="oc-cmd-input"
             type="text"
             role="combobox"

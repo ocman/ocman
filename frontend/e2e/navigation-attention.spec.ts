@@ -48,3 +48,18 @@ test('recent Home has no badge for hidden history while current sessions are run
   await expect(page.getByText(factory.title, { exact: true })).not.toBeVisible();
   await expect(page.getByText('Notification-only history', { exact: true })).not.toBeVisible();
 });
+
+test('navigation width snaps when reduced motion is requested', async ({ mockedPage: page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/sessions');
+  const collapse = page.getByRole('button', { name: 'Collapse navigation' });
+  const sidebar = page.getByRole('complementary').filter({ has: page.getByRole('navigation', { name: 'Main navigation' }) });
+  await collapse.focus();
+  // Observe the first frame after the toggle, not the eventual width.
+  const width = await collapse.evaluate(button => {
+    (button as HTMLButtonElement).click();
+    return new Promise(resolve => requestAnimationFrame(() => resolve(button.closest('aside')?.getBoundingClientRect().width)));
+  });
+  await expect(sidebar.getByRole('button', { name: 'Expand navigation' })).toBeVisible();
+  expect(width).toBe(52);
+});

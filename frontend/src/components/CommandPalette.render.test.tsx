@@ -88,6 +88,7 @@ function renderPalette() {
   const tree = () => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
+        <button>Palette origin</button>
         <CommandPalette />
         <LocationProbe />
       </MemoryRouter>
@@ -96,6 +97,33 @@ function renderPalette() {
   const view = render(tree());
   return { queryClient, rerenderPalette: () => view.rerender(tree()) };
 }
+
+it('restores the opener on dismissal but leaves it alone on selection', () => {
+  mocks.uiState.paletteMode = 'command';
+  mocks.uiState.paletteOpen = false;
+  Element.prototype.scrollIntoView = vi.fn();
+  const { rerenderPalette } = renderPalette();
+  const origin = screen.getByRole('button', { name: 'Palette origin' });
+  origin.focus();
+  mocks.uiState.paletteOpen = true;
+  rerenderPalette();
+  expect(screen.getByRole('combobox')).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+  expect(origin).toHaveFocus();
+
+  mocks.uiState.paletteOpen = false;
+  rerenderPalette();
+  mocks.uiState.paletteOpen = true;
+  rerenderPalette();
+  const input = screen.getByRole('combobox');
+  fireEvent.change(input, { target: { value: 'usage' } });
+  fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+  expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+  expect(input).toHaveFocus();
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(screen.getByTestId('location')).toHaveTextContent('/analytics/overview');
+  expect(origin).not.toHaveFocus();
+});
 
 describe('CommandPalette session search', () => {
   beforeEach(() => {

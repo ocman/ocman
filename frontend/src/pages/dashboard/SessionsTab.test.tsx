@@ -102,6 +102,31 @@ describe('session status filters', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('remeasures phone filters on height changes and dismisses if the trigger leaves the viewport', () => {
+    try {
+      vi.stubGlobal('innerHeight', 844);
+      mount();
+      const trigger = screen.getByRole('button', { name: 'Filter sessions' });
+      const bounds = vi.spyOn(trigger, 'getBoundingClientRect');
+      bounds.mockReturnValue(new DOMRect(250, 100, 44, 44));
+      fireEvent.click(trigger);
+      const filters = screen.getByRole('dialog', { name: 'Session filters' });
+      expect(filters).toHaveStyle({ top: '152px' });
+
+      bounds.mockReturnValue(new DOMRect(250, 60, 44, 44));
+      vi.stubGlobal('innerHeight', 540);
+      fireEvent(window, new Event('resize'));
+      expect(filters).toHaveStyle({ top: '112px' });
+
+      bounds.mockReturnValue(new DOMRect(250, -50, 44, 44));
+      vi.stubGlobal('innerHeight', 520);
+      fireEvent(window, new Event('resize'));
+      expect(filters).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps selected filters applied when the popover closes', () => {
     mount({ sessions: [...sessions, { ...sessions[0], id: 'routine', title: 'Routine session', routineId: 'r1' }] });
     const toggle = screen.getByRole('button', { name: 'Filter sessions' });

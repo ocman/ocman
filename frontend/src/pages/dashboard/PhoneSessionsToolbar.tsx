@@ -42,6 +42,11 @@ export function PhoneSessionsToolbar({ projects, dirScope, setDirScope, search, 
     <IconButton className={styles.action} label="New session" icon="bi-plus-lg" variant="accent" onClick={onNewSession} />
     <Popover open={panel !== null} onClose={() => setPanel(null)} triggerRef={triggerRef} id={id}
       label={panel === 'project' ? 'Choose project' : 'Session filters'} className={panel === 'project' ? styles.projectPanel : ''}
+      onHeightResize={panel === 'filters' ? () => {
+        const anchor = filterRef.current?.getBoundingClientRect();
+        if (anchor?.height && anchor.bottom > 0 && anchor.bottom + 20 < window.innerHeight) setTop(anchor.bottom + 8);
+        else setPanel(null);
+      } : undefined}
       style={{ top, right: 12, maxHeight: `calc(100dvh - ${top + 12}px)` }}>
       {panel === 'project'
         ? <ProjectScopePicker projects={projects} value={dirScope} onChange={scope => { setDirScope(scope); setPanel(null); projectRef.current?.focus(); }} />
