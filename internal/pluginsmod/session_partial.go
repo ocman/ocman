@@ -2,9 +2,12 @@ package pluginsmod
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/ocman/ocman/internal/convevents/v1map"
 	"github.com/ocman/ocman/internal/httpx"
@@ -15,6 +18,8 @@ import (
 
 type sessionPreviewKey struct{ platform, session string }
 type sessionPreviewWatch struct{ cancel context.CancelFunc }
+
+var errPreviewEnded = errors.New("observed turn ended")
 
 func (m *Module) stopSessionPreview(platformID, sessionID string) {
 	m.mu.Lock()
@@ -100,36 +105,62 @@ func (m *Module) streamSessionPreview(ctx context.Context, adapter platforms.Pla
 	closed := make(chan struct{})
 	go func() {
 		defer close(closed)
-		defer cancel()
 		module.RunWithRecover("plugin-session-preview-source", func() {
 			writer := &sessionPreviewWriter{projection: v1map.AssistantPreview{
 				SessionID: key.session, PreviousMessageID: previous, MaxBytes: plugins.SessionMaxPartialBytes,
-			}, updates: updates, stop: cancel}
-			_ = adapter.ProxyEvents(ctx, key.session, &httpx.SSEFrameWriter{Dst: writer}, ready)
+			}, updates: updates}
+			opened := false
+			err := adapter.ProxyEvents(ctx, key.session, &httpx.SSEFrameWriter{Dst: writer}, func() {
+				opened = true
+				ready()
+			})
+			outcome := "closed"
+			switch {
+			case errors.Is(err, errPreviewEnded):
+				outcome = "turn_ended"
+			case ctx.Err() != nil:
+				outcome = "cancelled"
+			case err != nil:
+				outcome = "source_failed"
+			}
+			log.WithFields(log.Fields{"outcome": outcome, "opened": opened, "frames": writer.frames, "previews": writer.previews}).Debug("plugin session preview source ended")
 		})
 	}()
 	defer func() { cancel(); <-closed }()
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	var sequence uint64
+	flush := func() {
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case update := <-updates:
+			turnKey := wireID + ":" + update.message
+			if recorded, err := m.plugins.HasPluginSessionCompletion(ctx, pluginID, turnKey); err != nil || recorded {
+				return
+			}
+			sequence++
+			turnID := sessionTurnID(turnKey)
+			if err := m.SessionBroker().Partial(ctx, pluginID, fmt.Sprintf("preview:%s:%d", turnID, sequence), plugins.SessionPartial{
+				SessionID: wireID, TurnID: turnID, Text: update.text,
+			}); err != nil && ctx.Err() == nil && sequence == 1 {
+				log.Debug("plugin session preview callback failed")
+			}
+		default:
+		}
+	}
 	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
 			return
+		case <-closed:
+			// A short turn can finish before the first tick. Ending the source
+			// must not cancel a preview it has already produced.
+			flush()
+			return
 		case <-tick.C:
-			select {
-			case update := <-updates:
-				turnKey := wireID + ":" + update.message
-				if recorded, err := m.plugins.HasPluginSessionCompletion(ctx, pluginID, turnKey); err != nil || recorded {
-					continue
-				}
-				sequence++
-				turnID := sessionTurnID(turnKey)
-				_ = m.SessionBroker().Partial(ctx, pluginID, fmt.Sprintf("preview:%s:%d", turnID, sequence), plugins.SessionPartial{
-					SessionID: wireID, TurnID: turnID, Text: update.text,
-				})
-			default:
-			}
+			flush()
 		}
 	}
 }
@@ -139,16 +170,18 @@ type previewUpdate struct{ message, text string }
 type sessionPreviewWriter struct {
 	projection v1map.AssistantPreview
 	updates    chan previewUpdate
-	stop       context.CancelFunc
+	frames     int
+	previews   int
 }
 
 func (w *sessionPreviewWriter) Write(frame []byte) (int, error) {
+	w.frames++
 	id, text, done := w.projection.Apply(v1map.ParseFrame(frame))
 	if done {
-		w.stop()
-		return len(frame), context.Canceled
+		return len(frame), errPreviewEnded
 	}
 	if id != "" {
+		w.previews++
 		select {
 		case <-w.updates:
 		default:

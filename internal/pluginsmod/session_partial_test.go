@@ -21,10 +21,12 @@ func TestSessionPreviewAndDurableCompletion(t *testing.T) {
 		name       string
 		capability plugins.Capability
 		stream     bool
+		burst      bool
 	}{
-		{"opted in", plugins.StreamingSessionCapability, true},
-		{"capable but not opted in", plugins.StreamingSessionCapability, false},
-		{"legacy", plugins.FollowupSessionCapability, true},
+		{"opted in", plugins.StreamingSessionCapability, true, false},
+		{"finishes between preview ticks", plugins.StreamingSessionCapability, true, true},
+		{"capable but not opted in", plugins.StreamingSessionCapability, false, false},
+		{"legacy", plugins.FollowupSessionCapability, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			capability := tc.capability
@@ -55,6 +57,10 @@ func TestSessionPreviewAndDurableCompletion(t *testing.T) {
 					case <-ctx.Done():
 						return ctx.Err()
 					case frame := <-frames:
+						if tc.burst {
+							_, err := io.WriteString(w, frame)
+							return err
+						}
 						if _, err := fmt.Fprintf(w, "data: %s\n\n", frame); err != nil {
 							return err
 						}
@@ -101,7 +107,19 @@ func TestSessionPreviewAndDurableCompletion(t *testing.T) {
 			// The other plugin and the same ID on another platform own neither binding.
 			m.watchSessionPreview(ctx, "org.example.other", platform, session, "", true)
 			m.watchSessionPreview(ctx, owner, "different-platform", session, "", true)
-			if tc.stream && capability == plugins.StreamingSessionCapability {
+			if tc.burst {
+				stop := m.watchSessionPreview(ctx, owner, platform, session, "", true)
+				defer stop()
+				<-opened
+				frames <- `data: {"type":"message.updated","properties":{"info":{"id":"answer","sessionID":"session-a","role":"assistant"}}}` + "\n\n" +
+					`data: {"type":"message.part.updated","properties":{"part":{"id":"visible","messageID":"answer","sessionID":"session-a","type":"text","text":"Hello"}}}` + "\n\n" +
+					`data: {"type":"session.idle","properties":{"sessionID":"session-a"}}` + "\n\n"
+				p := receivePreview(t, ctx, partials)
+				if p.Text != "Hello" {
+					t.Fatalf("wrong preview: %+v", p)
+				}
+				turnID = p.TurnID
+			} else if tc.stream && capability == plugins.StreamingSessionCapability {
 				stop := m.watchSessionPreview(ctx, owner, platform, session, "", true)
 				defer stop()
 				if receivePreview(t, ctx, opened) != session {
