@@ -86,13 +86,16 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if call.Method == SessionStopMethod {
 		return b.stopTools(ctx, pluginID, call)
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ToolSessionCapability.Version.Minor || call.Method != SessionRunMethod {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > StreamingSessionCapability.Version.Minor || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	params, err := DecodeSessionRunParams(call.Params)
+	if params.Stream && call.Version.Minor < StreamingSessionCapability.Version.Minor {
+		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
+	}
 	if err != nil || params.Tools != nil && call.Version.Minor < 7 || params.Archived && call.Version.Minor < ArchivedSessionCapability.Version.Minor || params.ReadOnly && call.Version.Minor < ReadOnlySessionCapability.Version.Minor || params.AssociatedProjectID != "" && call.Version.Minor < AssociatedSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
@@ -149,6 +152,11 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 	ctx, cancel := context.WithTimeout(ctx, SessionCompletedTimeout)
 	defer cancel()
 	value, err := unaryCall(ctx, b.authorize, func(ctx context.Context, id string, call Call) (<-chan Reply, error) {
+		if call.Version.Minor < StreamingSessionCapability.Version.Minor && completion.TurnID != "" {
+			legacy := completion
+			legacy.TurnID = ""
+			call.Params, _ = json.Marshal(legacy) // validated above
+		}
 		// Reserve the largest request ID before dispatch. JSON escaping can make
 		// even text below the raw byte bound exceed the transport's frame limit.
 		frame := call
@@ -158,23 +166,10 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 		}
 		return b.call(ctx, id, call)
 	}, pluginID, SessionAllowed, completion, func(d Description) Call {
-		version := SessionCapability.Version
-		for _, c := range d.Capabilities {
-			if c.Name == "session" && c.Version.Major == 1 {
-				version.Minor = min(c.Version.Minor, ToolSessionCapability.Version.Minor)
-			}
-		}
 		return Call{
-			OperationID: operationID, Capability: SessionCapability.Name, Version: version,
+			OperationID: operationID, Capability: SessionCapability.Name, Version: sessionVersion(d),
 			Method: SessionCompletedMethod,
 		}
 	})
-	if err != nil {
-		return err
-	}
-	var ack map[string]json.RawMessage
-	if json.Unmarshal(value, &ack) != nil || ack == nil || len(ack) != 0 {
-		return ErrInvalidMessage
-	}
-	return nil
+	return sessionAck(value, err)
 }

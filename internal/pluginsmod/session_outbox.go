@@ -94,6 +94,7 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 		return
 	}
 	if delivery != 0 {
+		m.stopSessionPreview(platformID, sessionID)
 		m.sessionOutbox.kick()
 	}
 }
@@ -162,6 +163,10 @@ func (m *Module) claimSessionCompletions(ctx context.Context, admit func(PluginS
 // unattempted, and the next tick after re-enablement delivers exactly the work
 // already owed. Fails closed: an unreadable registration pauses.
 func (m *Module) sessionDeliveryAllowed(ctx context.Context, pluginID string) bool {
+	return m.sessionCallbackAllowed(ctx, pluginID, plugins.SessionAllowed)
+}
+
+func (m *Module) sessionCallbackAllowed(ctx context.Context, pluginID string, allowed func(plugins.Description, []string) error) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.store == nil || m.stopping {
@@ -169,7 +174,7 @@ func (m *Module) sessionDeliveryAllowed(ctx context.Context, pluginID string) bo
 	}
 	return m.store.WithPluginConversation(ctx, pluginID,
 		func(d plugins.Description, grants []string, _ plugins.Config) error {
-			return plugins.SessionAllowed(d, grants)
+			return allowed(d, grants)
 		}) == nil
 }
 

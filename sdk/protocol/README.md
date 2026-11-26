@@ -607,6 +607,38 @@ Permission prompts remain in ocman and are never exposed to the provider.
 
 ## session.v1
 
+### Assistant previews, minor 8
+
+Declare `StreamingSessionCapability` and pass `"stream": true` on a `run` or
+`send` request to receive best-effort `partial` callbacks for that request's
+turn in a session the plugin owns. The flag defaults to false and does not
+carry over to subsequent turns. The Go SDK omits the flag when negotiating
+with older hosts so those requests still receive a completion. The host rechecks enablement
+and the existing session grants on every callback. There is no subscription to
+arbitrary sessions. Only visible assistant text is projected; no reasoning,
+tool input/output, prompt text, or permission data is sent.
+
+```json
+{"sessionId":"ses_01","turnId":"turn:…","text":"A partial answer"}
+```
+
+Each callback replaces the preview for `(sessionId, turnId)`; it is not an
+append. The host coalesces updates, limits preview text to 32 KiB, and can omit
+updates or whole previews, including on disconnect or if the event source lacks
+the message or part metadata. Acknowledge with `{}` promptly and handle display
+work outside the callback. Previews are not persisted, replayed, or retried.
+Intermediate assistant messages may have different turn IDs and never receive
+their own completion. There is no separate preview terminal event.
+
+`completed` at minor 8 includes the opaque `turnId` of the selected final
+assistant message. The session ID uses the same compatibility form as `run`.
+Treat `completed.text` as authoritative even if a preview differs or never
+arrived. A completion supersedes provisional output for that reply. Ignore
+late previews for a finalized turn and deduplicate durable completions by
+their `sess-out:<id>` operation ID, not by preview ID. Minors 0–7 keep the
+original `completed` payload without `turnId` and never receive `partial`.
+The existing `stop` method remains specific to plugin tool contexts.
+
 ### Project association, minor 6
 
 Session 1.6 adds optional `associatedProjectId` to workspace runs. It is an

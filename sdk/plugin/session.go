@@ -15,6 +15,7 @@ type (
 	SessionSendParams = protocol.SessionSendParams
 	SessionRunResult  = protocol.SessionRunResult
 	SessionCompleted  = protocol.SessionCompleted
+	SessionPartial    = protocol.SessionPartial
 	SessionUsage      = protocol.SessionUsage
 	SessionTools      = protocol.SessionTools
 	SessionTool       = protocol.SessionTool
@@ -34,6 +35,7 @@ const (
 	SessionProjectSetting  = protocol.SessionProjectSetting
 	SessionRunMethod       = protocol.SessionRunMethod
 	SessionCompletedMethod = protocol.SessionCompletedMethod
+	SessionPartialMethod   = protocol.SessionPartialMethod
 )
 
 // SessionCapability is session.v1.
@@ -47,6 +49,7 @@ var FollowupSessionCapability = protocol.FollowupSessionCapability
 var AssociatedSessionCapability = protocol.AssociatedSessionCapability
 
 var ToolSessionCapability = protocol.ToolSessionCapability
+var StreamingSessionCapability = protocol.StreamingSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps

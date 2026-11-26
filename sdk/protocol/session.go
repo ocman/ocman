@@ -76,6 +76,7 @@ type SessionRunParams struct {
 	Model               string        `json:"model,omitempty"`
 	PermissionProfile   string        `json:"permissionProfile,omitempty"`
 	Subpath             string        `json:"subpath,omitempty"`
+	Stream              bool          `json:"stream,omitempty"` // opt into previews for this request (1.8)
 	// Archived creates the session already archived, for background runs
 	// that should stay out of the sidebar.
 	Archived bool `json:"archived,omitempty"`
@@ -91,6 +92,7 @@ type SessionRunResult struct {
 // the session it came from.
 type SessionCompleted struct {
 	SessionID string        `json:"sessionId"`
+	TurnID    string        `json:"turnId,omitempty"` // session 1.8, when available
 	Text      string        `json:"text"`
 	Usage     *SessionUsage `json:"usage,omitempty"`
 }
@@ -131,8 +133,7 @@ func (p SessionRunParams) Validate() error {
 func ValidPermissionProfileName(name string) bool { return validText(name) }
 
 func (c SessionCompleted) Validate() error {
-	if !validText(c.SessionID) || strings.TrimSpace(c.Text) == "" || len(c.Text) > SessionMaxTextBytes || !utf8.ValidString(c.Text) ||
-		strings.ContainsFunc(c.Text, func(r rune) bool { return r != '\n' && r != '\r' && r != '\t' && (r < 0x20 || r == 0x7f) }) ||
+	if !validText(c.SessionID) || c.TurnID != "" && !validText(c.TurnID) || len(c.Text) > SessionMaxTextBytes || !validSessionReplyText(c.Text) ||
 		c.Usage != nil && c.Usage.Validate() != nil {
 		return ErrInvalidMessage
 	}

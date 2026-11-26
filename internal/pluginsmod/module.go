@@ -113,6 +113,7 @@ type Module struct {
 	// survive a restart.
 	sessionOnce       sync.Once
 	sessionBroker     *plugins.SessionBroker
+	sessionPreviews   map[sessionPreviewKey]*sessionPreviewWatch // guarded by mu
 	sessionJobs       *worker.Worker[sessionJob]
 	sessionDeliveries *worker.Worker[PluginSessionCompletion]
 	sessionOutbox     *outbox[PluginSessionCompletion]

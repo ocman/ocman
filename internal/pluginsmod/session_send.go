@@ -80,7 +80,10 @@ func (m *Module) sendSession(ctx context.Context, pluginID string, params plugin
 	}
 	// Retain the session's existing creation identity and all pinned selections.
 	// Never create a session, reset permissions or send through another owner.
+	m.stopSessionPreview(platformID, sessionID)
+	stopPreview := m.watchSessionPreview(ctx, pluginID, platformID, sessionID, latest, params.Stream)
 	if err := m.deps.Enqueue(ctx, platformID, false, platforms.SendMessageRequest{SessionID: sessionID, Message: params.Prompt, PreserveSelections: true}); err != nil {
+		stopPreview()
 		return "", err
 	}
 	return m.pluginWireSession(ctx, platformID, sessionID)

@@ -2256,6 +2256,10 @@ sequenceDiagram
     B->>S: Enqueue prompt with exact agent/model
     B->>D: Persist run result
     B-->>P: Result on caller request ID, sessionId or safe error
+    opt Session 1.8 and stream true on this request
+        S-->>B: Live assistant text events for the linked session
+        B-->>P: Coalesced partial snapshot after grant check
+    end
     S->>D: Completed assistant text and observed usage, idempotent outbox append
     O->>D: Claim due head per session
     O->>P: Call session/completed with usage, stable sess-out row ID
@@ -2294,6 +2298,12 @@ sequenceDiagram
   mapping and AUTOINCREMENT outbox ID survive reopen. Pending deliveries replay
   after a crash, including one after the consumer's effect but before host ack.
   Consumers must durably deduplicate the stable operation ID.
+- `internal/pluginsmod/session_partial.go` watches the owned session's event
+  stream for runs and follow-ups that negotiate session 1.8 and request `stream`.
+  It keeps only the
+  latest text snapshot, rechecks grants before dispatch, and does not write
+  to the outbox. The final assistant message's receipt key supplies the
+  matching turn ID on durable delivery.
 - Observed tokens and cost are stored with the completion in the same outbox
   insert. Missing usage remains unknown across retries; it is never synthesized
   as free inference. The v2 compatibility converter marks synthesized UI defaults

@@ -11,7 +11,7 @@ import (
 // SessionToolHandler serves only validated tool callbacks, not completions.
 func SessionToolHandler(run func(context.Context, string, SessionToolCall) (json.RawMessage, error)) Handler {
 	return func(ctx context.Context, call Call, _ func(json.RawMessage) error) (json.RawMessage, error) {
-		if call.Capability != "session" || call.Version != ToolSessionCapability.Version || call.Method != SessionToolMethod {
+		if call.Capability != "session" || call.Version.Major != 1 || call.Version.Minor < 7 || call.Method != SessionToolMethod {
 			return nil, Failure(ErrorNotFound)
 		}
 		var params SessionToolCall

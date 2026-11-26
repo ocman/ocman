@@ -18,6 +18,7 @@ const SessionSendGrant = "session.send"
 type SessionSendParams struct {
 	After  string `json:"after"`
 	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream,omitempty"` // opt into previews for this request (1.8)
 }
 
 func (p SessionSendParams) Validate() error {
@@ -28,13 +29,16 @@ func (p SessionSendParams) Validate() error {
 }
 
 func (b *SessionBroker) send(ctx context.Context, pluginID string, call Call) (SessionRunResult, error) {
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor < 5 || call.Version.Minor > ToolSessionCapability.Version.Minor {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor < 5 || call.Version.Minor > StreamingSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	var params SessionSendParams
 	d := json.NewDecoder(bytes.NewReader(call.Params))
 	d.DisallowUnknownFields()
 	if !validText(call.OperationID) || len(call.Params) > MaxMessageBytes || checkJSON(call.Params) != nil || d.Decode(&params) != nil || d.Decode(new(any)) != io.EOF || params.Validate() != nil {
+		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
+	}
+	if params.Stream && call.Version.Minor < StreamingSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionRunTimeout)

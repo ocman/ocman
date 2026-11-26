@@ -79,6 +79,51 @@ func TestPromptOnlySessionRunUsesNegotiatedVersion(t *testing.T) {
 	}
 }
 
+func TestSessionStreamingPreferenceFollowsNegotiation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version plugin.Version
+		stream  bool
+	}{
+		{"streaming host", plugin.StreamingSessionCapability.Version, true},
+		{"older host", plugin.FollowupSessionCapability.Version, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enc, dec, requests, done := requestConnection(t, 2, true, plugin.StreamingSessionCapability.Version, tc.version)
+			run, err := plugin.NewSessionRun("first", plugin.SessionRunParams{Prompt: "hello", Stream: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			send, err := plugin.NewSessionSend("second", plugin.SessionSendParams{After: "sess-out:1", Prompt: "hello again", Stream: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, call := range []plugin.Call{run, send} {
+				replies := make(chan plugin.Result, 1)
+				requests <- plugin.Request{Call: call, Replies: replies}
+				frame, err := dec.Decode()
+				if err != nil || frame.Call == nil || frame.Call.Version != tc.version || frame.Call.Method != call.Method {
+					t.Fatalf("unexpected negotiated request: %+v %v", frame, err)
+				}
+				var params map[string]json.RawMessage
+				if err := json.Unmarshal(frame.Call.Params, &params); err != nil || tc.stream && string(params["stream"]) != "true" || !tc.stream && params["stream"] != nil {
+					t.Fatalf("unexpected streaming flag: %s (%v)", frame.Call.Params, err)
+				}
+				if err := enc.Encode(plugin.Envelope{Type: plugin.TypeResult, Result: &plugin.Result{ID: frame.Call.ID, Value: json.RawMessage(`{"sessionId":"s"}`)}}); err != nil {
+					t.Fatal(err)
+				}
+				<-replies
+			}
+			if err := enc.Encode(plugin.Envelope{Type: plugin.TypeShutdown, Shutdown: &plugin.Shutdown{}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestUnsupportedSessionFieldsDoNotTerminateStream(t *testing.T) {
 	enc, dec, requests, done := requestConnection(t, 2, true, plugin.ProjectSessionCapability.Version, plugin.SessionCapability.Version)
 	call, err := plugin.NewSessionRun("unsupported", plugin.SessionRunParams{Prompt: "go", NoTools: true})

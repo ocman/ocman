@@ -2,6 +2,8 @@ package pluginsmod
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/identity"
@@ -41,5 +43,16 @@ func (m *Module) pluginWireSession(ctx context.Context, platform, id string) (st
 }
 
 func (m *Module) completePluginSession(ctx context.Context, completion PluginSessionCompletion, id string) error {
-	return m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID), plugins.SessionCompleted{SessionID: id, Text: completion.Text, Usage: completion.Usage})
+	return m.SessionBroker().Completed(ctx, completion.PluginID, sessionOutboxOperation(completion.ID), plugins.SessionCompleted{
+		SessionID: id, TurnID: sessionTurnID(completion.turnKey), Text: completion.Text, Usage: completion.Usage,
+	})
+}
+
+// The durable receipt key already uses the compatibility session ID and the
+// assistant message ID. Hash it to give both deliveries the same bounded ID.
+func sessionTurnID(key string) string {
+	if key == "" {
+		return ""
+	}
+	return fmt.Sprintf("turn:%x", sha256.Sum256([]byte(key)))
 }

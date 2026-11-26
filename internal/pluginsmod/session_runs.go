@@ -24,6 +24,8 @@ func migratePluginSessionRuns(tx *sql.Tx) error {
 // reserveSessionRun fences creation across concurrent callers and restarts.
 // A pending receipt is uncertain work, never permission to start another run.
 func (d *Store) reserveSessionRun(ctx context.Context, pluginID, operationID, project string, params plugins.SessionRunParams) (sessionID string, claimed bool, err error) {
+	// A delivery preference does not change the prompt or rearm a replay.
+	params.Stream = false
 	data, _ := json.Marshal(struct {
 		Project string
 		Params  plugins.SessionRunParams

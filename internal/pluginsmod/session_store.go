@@ -62,8 +62,9 @@ type PluginSessionCompletion struct {
 	PluginID   string                `json:"pluginId"`
 	PlatformID string                `json:"platformId"`
 	SessionID  string                `json:"sessionId"`
-	Text       string                `json:"text"`
-	Attempts   int                   `json:"attempts"`
+	turnKey    string
+	Text       string `json:"text"`
+	Attempts   int    `json:"attempts"`
 }
 
 // Group keys the ordering group: one started session.
@@ -220,7 +221,7 @@ func (d *Store) sessionCompletionPage(ctx context.Context, after int64, limit in
 	if limit <= 0 {
 		return nil, nil
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT id,plugin_id,platform_id,session_id,text,attempts,usage_json
+	rows, err := d.db.QueryContext(ctx, `SELECT id,plugin_id,platform_id,session_id,operation_id,text,attempts,usage_json
 		FROM plugin_session_outbox o
 		WHERE o.status='pending' AND o.next_attempt_at<=? AND o.id>?
 		  AND o.id=(SELECT MIN(h.id) FROM plugin_session_outbox h
@@ -235,7 +236,7 @@ func (d *Store) sessionCompletionPage(ctx context.Context, after int64, limit in
 	for rows.Next() {
 		var item PluginSessionCompletion
 		var metadata sql.NullString
-		if err := rows.Scan(&item.ID, &item.PluginID, &item.PlatformID, &item.SessionID, &item.Text, &item.Attempts, &metadata); err != nil {
+		if err := rows.Scan(&item.ID, &item.PluginID, &item.PlatformID, &item.SessionID, &item.turnKey, &item.Text, &item.Attempts, &metadata); err != nil {
 			return nil, state.ErrPluginState
 		}
 		if metadata.Valid && json.Unmarshal([]byte(metadata.String), &item.Usage) != nil {

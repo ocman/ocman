@@ -7,6 +7,7 @@ func sessionStopVersion(call Call, stream *Stream) (Call, bool) {
 	if ready && call.Version == ToolSessionCapability.Version {
 		for _, c := range n.Capabilities {
 			if c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 7 {
+				call.Version = c.Version
 				return call, false
 			}
 		}
@@ -15,8 +16,8 @@ func sessionStopVersion(call Call, stream *Stream) (Call, bool) {
 }
 
 // sessionRequestVersion uses the exact negotiated wire version, regardless of
-// a constructor's minimum version. Extension fields cannot be downgraded onto
-// session 1.0. Reject those locally without tearing down other valid requests.
+// a constructor's minimum version. Reject unsupported execution options
+// locally. Streaming is only a delivery preference and can fall back safely.
 func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 	if call.Capability == SessionCapability.Name && call.Method == "stop" {
 		return sessionStopVersion(call, stream)
@@ -31,13 +32,17 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 			for _, c := range n.Capabilities {
 				if c.Name == SessionCapability.Name && c.Version.Major == 1 && c.Version.Minor >= 5 {
 					call.Version = c.Version
+					if params.Stream && c.Version.Minor < StreamingSessionCapability.Version.Minor {
+						params.Stream = false
+						call.Params, _ = json.Marshal(params)
+					}
 					return call, false
 				}
 			}
 		}
 		return call, true
 	}
-	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > ToolSessionCapability.Version.Minor {
+	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > StreamingSessionCapability.Version.Minor {
 		return call, false
 	}
 	n, ready := stream.Negotiation()
@@ -69,6 +74,10 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 		}
 		if capability.Version.Minor < 7 && params.Tools != nil {
 			return call, true
+		}
+		if params.Stream && capability.Version.Minor < StreamingSessionCapability.Version.Minor {
+			params.Stream = false
+			call.Params, _ = json.Marshal(params)
 		}
 		call.Version = capability.Version
 		break

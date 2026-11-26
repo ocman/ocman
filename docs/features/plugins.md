@@ -544,6 +544,28 @@ address on your behalf — the value only shapes the links it writes.
 
 ## Authoring session.v1
 
+### Streaming integration for `ocman-plugin-im`
+
+Advertise `StreamingSessionCapability` (session 1.8) and use the Go SDK's
+`StreamingSessionHandler` for both `partial` and `completed`. Set `Stream: true`
+on each `SessionRunParams` or `SessionSendParams` that should receive previews.
+Without that flag the turn is completed-only, even on session 1.8. Continue to
+support `completed` on its own. It is the only delivery on older hosts and
+may be the first event after a reconnect. The
+[wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md#assistant-previews-minor-8)
+defines preview limits and identity.
+
+Keep the session-to-thread mapping in the connector. Route previews by
+`sessionId`, replace rather than append text, and keep the displayed reply
+provisional until a completion arrives. A callback can race the `run` result,
+so never route an unknown session by guessing its thread. On completion,
+replace the provisional text or post the final answer if there was no preview.
+Keep deduplication by the durable completion operation ID. Throttling, display
+updates and cleanup on disconnect belong in the connector. This capability
+does not provide active-turn cancellation.
+
+### Completed turns and run admission
+
 The session 1.1 extension supports project-scoped model work without a required
 global project setting. Declare `ProjectSessionCapability` and request both
 `session.run` and `session.project`. The latter explicitly permits runs in this
