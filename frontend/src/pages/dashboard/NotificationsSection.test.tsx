@@ -33,7 +33,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); useUiSto
 
 it('registers background push before marking notifications enabled', async () => {
   render(<NotificationsSection />);
-  fireEvent.click(screen.getByLabelText('System notifications'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'System notifications' }));
   await waitFor(() => expect(enablePush).toHaveBeenCalledOnce());
   await waitFor(() => expect(useUiStore.getState().notificationsEnabled).toBe(true));
 });
@@ -41,7 +41,7 @@ it('registers background push before marking notifications enabled', async () =>
 it('keeps notifications off and shows registration errors', async () => {
   vi.mocked(enablePush).mockRejectedValue(new Error('Push service unavailable'));
   render(<NotificationsSection />);
-  fireEvent.click(screen.getByLabelText('System notifications'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'System notifications' }));
   expect(await screen.findByText('Push service unavailable')).toBeInTheDocument();
   expect(useUiStore.getState().notificationsEnabled).toBe(false);
 });
@@ -58,7 +58,7 @@ it('does not mark disabled when device removal fails', async () => {
   useUiStore.setState({ notificationsEnabled: true });
   vi.mocked(disablePush).mockRejectedValue(new Error('Could not remove device'));
   render(<NotificationsSection />);
-  fireEvent.click(screen.getByLabelText('System notifications'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'System notifications' }));
   expect(await screen.findByText('Could not remove device')).toBeInTheDocument();
   expect(useUiStore.getState().notificationsEnabled).toBe(true);
 });
@@ -70,7 +70,7 @@ it('offers re-registration immediately if server removal succeeded but browser c
   render(<NotificationsSection />);
   await act(async () => {});
   expect(screen.queryByRole('button', { name: 'Enable background alerts' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText('System notifications'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'System notifications' }));
   expect(await screen.findByRole('button', { name: 'Enable background alerts' })).toBeInTheDocument();
   expect(useUiStore.getState().notificationsEnabled).toBe(true);
 });
@@ -78,7 +78,7 @@ it('offers re-registration immediately if server removal succeeded but browser c
 it('unsubscribes when notifications are turned off', async () => {
   useUiStore.setState({ notificationsEnabled: true });
   render(<NotificationsSection />);
-  fireEvent.click(screen.getByLabelText('System notifications'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'System notifications' }));
   await waitFor(() => expect(disablePush).toHaveBeenCalledOnce());
   await waitFor(() => expect(useUiStore.getState().notificationsEnabled).toBe(false));
 });
@@ -87,7 +87,7 @@ it('requests permission on user interaction before subscribing', async () => {
   Object.assign(Notification, { permission: 'default' });
   render(<NotificationsSection />);
   expect(Notification.requestPermission).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByLabelText('System notifications'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'System notifications' }));
   await waitFor(() => expect(Notification.requestPermission).toHaveBeenCalledOnce());
   await waitFor(() => expect(enablePush).toHaveBeenCalledOnce());
 });
@@ -95,7 +95,7 @@ it('requests permission on user interaction before subscribing', async () => {
 it('shows Home Screen instructions when the browser lacks notifications', async () => {
   vi.stubGlobal('Notification', undefined);
   render(<NotificationsSection />);
-  expect(screen.getByLabelText('System notifications')).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: 'System notifications' })).toBeDisabled();
   expect(screen.getByText(/add ocman to your Home Screen/)).toBeInTheDocument();
   await act(async () => {});
 });

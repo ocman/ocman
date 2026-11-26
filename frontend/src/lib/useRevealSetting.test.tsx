@@ -1,18 +1,42 @@
 // @vitest-environment jsdom
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useRevealSetting, type RevealRequest } from './useRevealSetting';
+import { SettingRow } from '../components/SettingRow';
 
 const first: RevealRequest = { id: 'bell-sound', seq: 1 };
 
-function Probe({ late, request = first }: { late: boolean; request?: RevealRequest }) {
+function Probe({ late, request = first, scrollIntoView }: { late: boolean; request?: RevealRequest; scrollIntoView?: HTMLElement['scrollIntoView'] }) {
   const found = useRevealSetting(request);
-  return late ? <p>{String(found)}</p> : <div id="setting-bell-sound">{String(found)}</div>;
+  return late ? <p>{String(found)}</p> : <div id="setting-bell-sound" ref={(row) => {
+    if (row && scrollIntoView) row.scrollIntoView = scrollIntoView;
+  }}>{String(found)}</div>;
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('useRevealSetting', () => {
+  it('focuses the named row when its control is disabled', () => {
+    function DisabledSetting() {
+      useRevealSetting(first);
+      return <SettingRow setting="bell-sound"><input type="checkbox" aria-label="Bell sound" disabled /></SettingRow>;
+    }
+    render(<DisabledSetting />);
+    expect(screen.getByRole('group', { name: 'Bell sound' })).toHaveFocus();
+  });
+
+  it.each([[true, 'instant'], [false, 'smooth']])('reveals with reduced motion %s using %s scrolling', async (reduced, behavior) => {
+    const matchMedia = vi.fn(() => ({ matches: reduced }));
+    const scrollIntoView = vi.fn();
+    vi.stubGlobal('matchMedia', matchMedia);
+    render(<Probe late={false} scrollIntoView={scrollIntoView} />);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior });
+    expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+  });
+
   it('highlights the row once it renders, then clears it', async () => {
     vi.useFakeTimers();
     const { container, rerender } = render(<Probe late />);

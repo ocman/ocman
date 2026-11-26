@@ -1,5 +1,39 @@
 import { test, expect, MOCK_PLATFORM_OPTIONS } from './fixtures';
 
+test('Enter on a Settings search result focuses the revealed control', async ({ mockedPage: page }) => {
+  await page.goto('/settings?tab=sessions');
+  await page.getByRole('searchbox', { name: 'Search settings' }).fill('Bell sound');
+  await page.getByRole('button', { name: /App & notifications Bell sound/ }).press('Enter');
+  const bell = page.getByRole('checkbox', { name: 'Bell sound', exact: true });
+  await expect(bell).toBeVisible();
+  await expect(bell).toBeFocused();
+  await page.goBack();
+  await expect(page.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('Bell sound');
+});
+
+for (const width of [1280, 390]) {
+  test(`Settings category history skips keystrokes and preserves scope at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/settings?tab=sessions&remoteId=local');
+    const groups = page.getByRole('navigation', { name: 'Settings groups' });
+    if (width === 390) await groups.getByRole('combobox', { name: 'Settings group' }).selectOption('permissions');
+    else await groups.getByRole('button', { name: 'Permissions', exact: true }).click();
+    await expect(page).toHaveURL(/tab=permissions&remoteId=local$/);
+    await expect(page.getByRole('heading', { name: 'Permissions', exact: true, level: 2 })).toBeVisible();
+    const search = groups.getByRole('searchbox', { name: 'Search settings' });
+    await search.press('b');
+    await expect(page).toHaveURL(/tab=permissions&remoteId=local&q=b$/);
+    await expect(search).toHaveValue('b');
+    await search.press('e');
+    await expect(page).toHaveURL(/tab=permissions&remoteId=local&q=be$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/settings\?tab=sessions&remoteId=local$/);
+    await expect(page.getByRole('heading', { name: 'Sessions', exact: true, level: 2 })).toBeVisible();
+    await page.goForward();
+    await expect(search).toHaveValue('be');
+  });
+}
+
 test('settings categories contain named sections and keep legacy links working', async ({ mockedPage: page }) => {
   await page.route('/api/settings/platforms', (route) => route.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled: ['opencode', 'claudecode'] } }));
   await page.route('/api/settings/model-fallthrough', (route) => route.fulfill({ json: { patienceMinutes: 15, fallbackMinutes: 60 } }));

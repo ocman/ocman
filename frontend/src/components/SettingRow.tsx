@@ -48,15 +48,20 @@ export function SettingRow({
   children: ReactNode;
 }) {
   const entry = setting ? settingEntry(setting) : undefined;
+  const anchor = setting ? settingAnchor(setting) : undefined;
+  const labelId = anchor ? `${anchor}-label` : undefined;
   const description = desc ?? entry?.description;
   return (
     <div
-      id={setting ? settingAnchor(setting) : undefined}
+      id={anchor}
+      role={anchor ? 'group' : undefined}
+      aria-labelledby={labelId}
+      tabIndex={anchor ? -1 : undefined}
       title={compact ? entry?.description : undefined}
       className={`${block ? `settings-row settings-row--block ${styles.row} ${styles.block}` : `settings-row ${styles.row}`}${compact ? ` ${styles.compact}` : ''}`}
     >
       <div className={styles.info}>
-        <div className={styles.label}>{label ?? entry?.title}</div>
+        <div id={labelId} className={styles.label}>{label ?? entry?.title}</div>
         {!compact && description != null && <div className={styles.description}>{description}</div>}
         {!compact && detail != null && <div className={styles.description}>{detail}</div>}
         {!compact && entry && (

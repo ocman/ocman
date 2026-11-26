@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigationType, useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../../lib/headerContext';
 import { useAuthStore } from '../../lib/authStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
@@ -22,32 +22,40 @@ export function SettingsTab() {
   const [params, setParams] = useSearchParams();
   const active = settingsCategory(params.get('tab'));
   const query = params.get('q') ?? '';
-  const updateView = (tab: SettingsGroupId, query: string) => {
+  const updateView = (tab: SettingsGroupId, query: string, replace = true) => {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('tab', tab);
       if (query) next.set('q', query); else next.delete('q');
       return next;
-    }, { replace: true });
+    }, { replace });
   };
-  const [target, setTarget] = useState<RevealRequest | null>(null);
+  const [request, setRequest] = useState<RevealRequest | null>(null);
   const searching = query.trim() !== '';
+  const navigation = useNavigationType();
+  // Back/Forward restores the view, not the one-off focus and scroll jump.
+  const target = navigation !== 'POP' && !searching && request && settingEntry(request.id).group === active ? request : null;
   const found = useRevealSetting(target);
   const missing = target && !found ? settingEntry(target.id) : null;
   const pick = (id: SettingId) => {
-    updateView(settingEntry(id).group, '');
-    setTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
+    const group = settingEntry(id).group;
+    updateView(group, '', group === active);
+    setRequest((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
   };
   const selectGroup = (id: SettingsGroupId) => {
-    updateView(id, '');
-    setTarget(null);
+    updateView(id, '', id === active);
+    setRequest(null);
+  };
+  const search = (value: string) => {
+    updateView(active, value);
+    setRequest(null);
   };
 
   return <div className={styles.page}>
     <nav className={styles.nav} aria-label="Settings groups">
       <SearchField className={styles.search} aria-label="Search settings" placeholder="Search settings"
-        value={query} onChange={(e) => updateView(active, e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Escape') updateView(active, ''); }} />
+        value={query} onChange={(e) => search(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') search(''); }} />
       <label className={styles.compact}>
         <span className={styles.caption}>Settings group</span>
         <SelectField aria-label="Settings group" value={searching ? '' : active}
