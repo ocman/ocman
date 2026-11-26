@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -202,11 +203,20 @@ func waitEvent(t *testing.T, h *liveHarness, id string, want db.SessionStatus) {
 
 func TestTerminalSessionHooksDriveStatus(t *testing.T) {
 	h := startLive(t, claudetest.Fixture("plain.jsonl"), nil)
+	// The initial scan can list an unlinked subagent before its parent.
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		if sessions, _ := h.adapter.Sessions(t.Context(), "", 0); len(sessions) == 2 {
+		sessions, err := h.adapter.Sessions(t.Context(), "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		listed := func(id string) bool {
+			return slices.ContainsFunc(sessions, func(s db.Session) bool { return s.ID == id })
+		}
+		if listed(mainID) && listed(otherID) {
 			break
-		} else if time.Now().After(deadline) {
-			t.Fatalf("sessions = %+v", sessions)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waiting for sessions %s and %s: got %+v", mainID, otherID, sessions)
 		}
 	}
 	if s := sessionStatus(t, h, otherID); s != db.StatusInterrupted {
