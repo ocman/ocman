@@ -3,7 +3,7 @@ import type { SettingEntry } from './settingsCatalog';
 export const RELAY_SETTINGS = {
   'usage-collection': {
     group: 'privacy', title: 'Send usage reports',
-    description: 'Enabled by default. After foreground use, send a daily report containing a persistent random installation ID, UTC activity date and ocman release version to the configured relay. Failed delivery may retry. This counts installations, not people. No prompts, code, paths, repository names, account identifiers or session IDs are sent.',
+    description: 'Enabled by default. Send installation activity and daily totals for active sessions and input/output tokens by model to the configured relay. Reports include a persistent random installation ID, UTC date and ocman version. Unrecognized model names are grouped as Other. No prompts, code, paths, repository names, account identifiers or session IDs are sent.',
     example: 'Turn this off to stop usage reports for this instance and clear pending reports. Sharing and webhooks keep working. Previously received records are not deleted.',
     keywords: 'privacy telemetry analytics metrics active users opt out opt-out collection version tracking pseudonymous',
   },

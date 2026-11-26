@@ -69,8 +69,9 @@ func TestDailyModelReportingLifecycle(t *testing.T) {
 	m.deps.RelayURL = func() string { return srv.URL }
 	now := m.now()
 	m.now = func() time.Time { return now }
-	m.sendDaily(t.Context()) // Off by default.
+	calls := 0
 	m.deps.Daily = func(_ context.Context, day time.Time) (usagewire.Daily, error) {
+		calls++
 		if day.Format(time.DateOnly) != "2026-11-12" || day.Hour() != 0 {
 			t.Errorf("unexpected bucket %s", day)
 		}
@@ -102,7 +103,7 @@ func TestDailyModelReportingLifecycle(t *testing.T) {
 	}
 	now = now.AddDate(0, 0, 1)
 	restart.sendDaily(t.Context())
-	if len(reports) != 2 {
-		t.Fatal("sent after opt out")
+	if len(reports) != 2 || calls != 2 {
+		t.Fatal("read or sent daily usage after opt out")
 	}
 }

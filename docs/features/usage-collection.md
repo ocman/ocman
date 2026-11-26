@@ -66,11 +66,11 @@ plain HTTP is accepted only for loopback development. Redirects are rejected.
 
 ### Daily model summaries
 
-Set `OCMAN_USAGE_DAILY_MODELS=true` on the ocman server to opt in to expanded
-reporting. **Send usage reports** must also be enabled. The first eligible
-bucket is the next full UTC day after enabling. Only yesterday's bucket is
-sent, with no historical backfill. Turning off usage reports cancels pending
-sends. Remove the environment variable and restart to disable model summaries.
+Daily model summaries follow **Send usage reports**, which is enabled by
+default. Existing opt-outs apply to both report types. The first eligible
+bucket is the next full UTC day after the worker first observes that reporting
+is enabled. Only yesterday's bucket is sent, with no historical backfill.
+Turning off usage reports cancels pending sends.
 
 `POST /v1/usage/daily` sends the installation ID, date and version with a
 `daily` object containing `sessions` and `models`. Each model entry contains
@@ -80,7 +80,7 @@ assistant message counts once overall and once per model used that day. Missing
 token accounting is not estimated. Only exact allowlisted public model IDs
 are sent; other names become `other`. No session IDs or message content are sent.
 
-Update collector filters first, deploy the relay second, and enable clients
+Update collector filters first, deploy the relay second, and upgrade clients
 last. Older relays do not support the daily route. Ordinary activity reports
 continue independently. The daily route shares rate limits and has a 4 KiB cap.
 
@@ -160,7 +160,7 @@ flowchart LR
     Local --> Worker[usagecollection worker]
     Settings[Instance opt-out] --> Worker
     Worker -->|ID, UTC date, version| Relay[Relay usage routes]
-    Summary[Owner-local analytics summaries] -->|Closed UTC day; explicit opt-in| Worker
+    Summary[Owner-local analytics summaries] -->|Closed UTC day; usage reporting enabled| Worker
     Worker -->|Daily session counts and tokens by model| Relay
     Relay -->|Separate usage and IP events| Forward[usageforward OTLP/HTTP]
     Forward --> Backend[Operator's logs backend]

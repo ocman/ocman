@@ -26,6 +26,7 @@ it('documents collection and saves an instance-wide opt-out', async () => {
   const toggle = screen.getByRole('checkbox', { name: 'Send usage reports' });
   await waitFor(() => expect(toggle).toBeChecked());
   expect(screen.getByText(/persistent random installation ID/)).toBeVisible();
+  expect(screen.getByText(/daily totals for active sessions and input\/output tokens by model/)).toBeVisible();
   expect(screen.getByText(/source-IP security events/)).toBeVisible();
   expect(screen.getByText('0.275.0')).toBeVisible();
   fireEvent.click(toggle);
