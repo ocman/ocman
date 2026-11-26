@@ -31,10 +31,10 @@ func TestCanonicalPluginReceiptsKeepLegacyCompletionCorrelations(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &legacyPluginPlatform{conversationLifecyclePlatform: &conversationLifecyclePlatform{lifecycle: platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageRole: "assistant", LatestMessageID: "message"}}}
-	if skip, err := m.conversationReplyAlreadyRecorded(t.Context(), p, key, "canonical"); err != nil || !skip {
+	if _, skip, err := m.conversationReplyAlreadyRecorded(t.Context(), p, key, "canonical"); err != nil || !skip {
 		t.Errorf("canonical replay lost conversation receipt: %v %v", skip, err)
 	}
-	if skip, err := m.sessionCompletionAlreadyRecorded(t.Context(), p, "plugin", "canonical"); err != nil || !skip {
+	if _, skip, err := m.sessionCompletionAlreadyRecorded(t.Context(), p, "plugin", "canonical"); err != nil || !skip {
 		t.Errorf("canonical replay lost session receipt: %v %v", skip, err)
 	}
 }

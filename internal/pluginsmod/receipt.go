@@ -11,27 +11,29 @@ import (
 
 // Read only lifecycle and the durable receipt before fetching a transcript.
 // Failed turns still need their attention notice even if a partial reply exists.
-func (m *Module) conversationReplyAlreadyRecorded(ctx context.Context, adapter platforms.Platform, key state.PluginConversationKey, sessionID string) (bool, error) {
+// The returned ID is the live finished reply the transcript must contain.
+func (m *Module) conversationReplyAlreadyRecorded(ctx context.Context, adapter platforms.Platform, key state.PluginConversationKey, sessionID string) (string, bool, error) {
 	reader, ok := adapter.(platforms.LifecycleReader)
 	if !ok {
-		return false, nil
+		return "", false, nil
 	}
 	lifecycle, err := reader.SessionLifecycle(ctx, sessionID)
 	if errors.Is(err, platforms.ErrUnsupported) {
-		return false, nil
+		return "", false, nil
 	}
 	if err != nil || lifecycle == nil {
-		return false, err
+		return "", false, err
 	}
 	if !conversationReplyReady(lifecycle.Status) {
-		return true, nil
+		return "", true, nil
 	}
 	if lifecycle.Status == db.StatusError || lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
-		return false, nil
+		return "", false, nil
 	}
 	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
-	return m.store.HasPluginConversationReply(ctx, key, prefix+":"+lifecycle.LatestMessageID)
+	recorded, err := m.store.HasPluginConversationReply(ctx, key, prefix+":"+lifecycle.LatestMessageID)
+	return lifecycle.LatestMessageID, recorded, err
 }

@@ -30,9 +30,9 @@ func (m *Module) watchToolSession(lifetime context.Context, b *sessionToolBindin
 			module.RunWithRecover("plugin-tool-session-reconcile", func() {
 				// Completion revokes b.ctx before appending its outbox row. Use
 				// the module lifetime so that revocation cannot cancel persistence.
-				ctx, cancel := context.WithTimeout(lifetime, 5*time.Second)
+				ctx, cancel := context.WithTimeout(lifetime, completedTurnAttemptTimeout)
 				defer cancel()
-				m.ReplyToSession(ctx, b.platform, b.session)
+				m.replyToSession(ctx, b.platform, b.session)
 			})
 		}
 	}

@@ -45,36 +45,50 @@ func (m *Module) newSessionOutbox() *outbox[PluginSessionCompletion] {
 // posted directly: a disconnect, a plugin crash or a host restart replays the
 // delivery instead of losing a completed turn.
 func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID string) {
+	if m.replyToSession(ctx, platformID, sessionID) {
+		m.retryCompletedTurn("session", platformID, sessionID, m.replyToSession)
+	}
+}
+
+// replyToSession is one ReplyToSession attempt. It reports whether stored
+// history still trails a turn the live lifecycle reports finished.
+func (m *Module) replyToSession(ctx context.Context, platformID, sessionID string) bool {
 	if m.store == nil || sessionID == "" {
-		return
+		return false
 	}
 	pluginID, linked, err := m.plugins.GetPluginSessionPlugin(ctx, platformID, sessionID)
 	if err != nil || !linked {
-		return
+		return false
 	}
 	adapter, ok := m.deps.Adapter(ctx, platformID, sessionID)
 	if !ok {
-		return
+		return false
 	}
-	if skip, err := m.sessionCompletionAlreadyRecorded(ctx, adapter, pluginID, sessionID); err != nil {
+	want, skip, err := m.sessionCompletionAlreadyRecorded(ctx, adapter, pluginID, sessionID)
+	if err != nil {
 		log.WithError(err).WithField("session_id", sessionID).Warn("checking session completion receipt")
-		return
+		return false
 	} else if skip {
-		return
+		return false
 	}
-	detail, err := adapter.Session(ctx, sessionID, conversationFetchLimit, 0)
+	detail, behind, err := readCompletedTurn(ctx, adapter, sessionID, want)
 	if err != nil || detail == nil {
 		log.WithError(err).WithField("session_id", sessionID).Warn("reading completed turn for session delivery")
-		return
+		return false
 	}
+	// A trailing transcript is still read: it may hold an unrecorded earlier
+	// turn. Only the retry decision depends on behind.
 	messageID, text := db.LatestAssistantTextVerbatim(detail.Messages, detail.Parts)
+	if behind && messageID == want {
+		return true // the stored reply is still its streamed prefix
+	}
 	// A session.changed event can arrive before session.idle. It is a recovery
 	// path for a missed idle edge, never permission to publish a partial turn.
 	if detail.Session == nil || !conversationReplyReady(detail.Session.Status) {
-		return
+		return behind
 	}
 	if text == "" {
-		return
+		return behind
 	}
 	m.revokeSessionTools(platformID, sessionID)
 	// The message ID keys the append, so a repeated idle edge for the same
@@ -85,45 +99,48 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	}
 	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
 	if err != nil {
-		return
+		return behind
 	}
 	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, prefix+":"+messageID, text, usage)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": pluginID, "session_id": sessionID}).
 			Error("recording completed session turn for delivery")
-		return
+		return behind
 	}
 	if delivery != 0 {
 		m.stopSessionPreview(platformID, sessionID)
 		m.sessionOutbox.kick()
 	}
+	return behind
 }
 
 // sessionCompletionAlreadyRecorded reads only lifecycle and the durable receipt
-// before fetching a transcript, mirroring the conversation check.
-func (m *Module) sessionCompletionAlreadyRecorded(ctx context.Context, adapter platforms.Platform, pluginID, sessionID string) (bool, error) {
+// before fetching a transcript, mirroring the conversation check. want is the
+// live finished turn's message ID, or empty when the lifecycle names none.
+func (m *Module) sessionCompletionAlreadyRecorded(ctx context.Context, adapter platforms.Platform, pluginID, sessionID string) (string, bool, error) {
 	reader, ok := adapter.(platforms.LifecycleReader)
 	if !ok {
-		return false, nil
+		return "", false, nil
 	}
 	lifecycle, err := reader.SessionLifecycle(ctx, sessionID)
 	if errors.Is(err, platforms.ErrUnsupported) {
-		return false, nil
+		return "", false, nil
 	}
 	if err != nil || lifecycle == nil {
-		return false, err
+		return "", false, err
 	}
 	if !conversationReplyReady(lifecycle.Status) {
-		return true, nil
+		return "", true, nil
 	}
 	if lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
-		return false, nil
+		return "", false, nil
 	}
 	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
-	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, prefix+":"+lifecycle.LatestMessageID)
+	recorded, err := m.plugins.HasPluginSessionCompletion(ctx, pluginID, prefix+":"+lifecycle.LatestMessageID)
+	return lifecycle.LatestMessageID, recorded, err
 }
 
 // claimSessionCompletions pages through due head completions until a batch
@@ -244,7 +261,8 @@ func (m *Module) ReconcileSessionCompletions(ctx context.Context) {
 		log.WithError(err).Warn("listing plugin sessions for completion reconciliation")
 		return
 	}
+	// The sweep is itself the periodic retry, so it schedules no backoff.
 	for _, session := range sessions {
-		m.ReplyToSession(ctx, session.PlatformID, session.SessionID)
+		m.replyToSession(ctx, session.PlatformID, session.SessionID)
 	}
 }

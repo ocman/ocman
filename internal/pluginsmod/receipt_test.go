@@ -51,13 +51,13 @@ func TestConversationReceiptPreflight(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &conversationLifecyclePlatform{lifecycle: platforms.SessionLifecycle{Status: tc.status, LatestMessageID: tc.id, LatestMessageRole: tc.role}, lifecycleErr: tc.err}
-			skip, err := m.conversationReplyAlreadyRecorded(t.Context(), p, key, "session")
+			_, skip, err := m.conversationReplyAlreadyRecorded(t.Context(), p, key, "session")
 			if skip != tc.skip || (err != nil) != tc.wantErr {
 				t.Fatalf("preflight = %v, %v", skip, err)
 			}
 		})
 	}
-	if skip, err := m.conversationReplyAlreadyRecorded(t.Context(), struct{ platforms.Platform }{}, key, "session"); skip || err != nil {
+	if _, skip, err := m.conversationReplyAlreadyRecorded(t.Context(), struct{ platforms.Platform }{}, key, "session"); skip || err != nil {
 		t.Fatalf("fallback = %v, %v", skip, err)
 	}
 }

@@ -72,6 +72,9 @@ provider app would compete for its stream.
 - On idle, read the newest assistant text under a recovered worker and append
   to the durable outbox keyed by `<sessionId>:<messageId>`. Repeated edges append
   nothing. Do not send provider replies directly from the idle callback.
+- Stored history can trail the idle edge. Gate the transcript read on the live
+  lifecycle's latest message through `readCompletedTurn`: refresh, reread, then
+  retry with bounded backoff. Never return silently and wait for reconciliation.
 
 ## Durable outbox
 

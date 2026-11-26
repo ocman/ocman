@@ -669,6 +669,14 @@ after reopening the state database. Consumers must durably deduplicate that ID
 with their effect, or use an idempotent provider operation. The SDK does not
 make consumer effects transactional.
 
+Stored history is ingested from a separate provider stream, so the idle edge
+can arrive before the stored transcript holds the finished turn. When the live
+lifecycle reports a finished reply that the transcript does not contain yet,
+ocman refreshes that session's stored history and reads it again. If it still
+trails, the session is retried with backoff for about 30 seconds before only
+the periodic reconciliation is left to record it. Conversation replies follow
+the same rule.
+
 Active tool sessions also check for completed turns once per second until their
 binding closes or expires. This uses the existing lifecycle gate and durable
 outbox, so a missed idle edge or delayed history projection does not leave a

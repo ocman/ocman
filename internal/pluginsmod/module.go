@@ -118,6 +118,8 @@ type Module struct {
 	sessionDeliveries *worker.Worker[PluginSessionCompletion]
 	sessionOutbox     *outbox[PluginSessionCompletion]
 	sessionTools      sync.Map // random bearer token -> *sessionToolBinding; never restored after restart
+	turnMu            sync.Mutex
+	turnRetries       map[completedTurnKey]*completedTurnRetry // guarded by turnMu; pending while stored history trails a finished turn
 
 	// tool.v1: the MCP server's built-in names, which win collisions, and
 	// the in-memory confirmations agents wait on.
