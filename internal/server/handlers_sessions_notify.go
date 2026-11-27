@@ -10,6 +10,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -96,7 +97,7 @@ func (s *Server) notificationEntriesForSessions(ctx context.Context, all []db.Se
 	out := make([]notifyEntry, 0, len(all))
 	for i := range all {
 		se := &all[i]
-		if se.Archived || se.RoutineID != "" || routines[state.Key{Platform: se.Platform, SessionID: se.ID}] != "" {
+		if se.Archived || se.Origin == string(sessioncatalog.Plugin) || se.RoutineID != "" || routines[state.Key{Platform: se.Platform, SessionID: se.ID}] != "" {
 			continue
 		}
 		deferredPermission := false

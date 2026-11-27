@@ -15,6 +15,7 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/remote"
 	pb "github.com/ocman/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -31,6 +32,34 @@ func (p *pushTestPlatform) NotificationPrompts(context.Context, string) ([]platf
 }
 func (p *pushTestPlatform) SessionLifecycle(context.Context, string) (*platforms.SessionLifecycle, error) {
 	return p.life, p.lifeErr
+}
+
+func TestNotificationsExcludePluginSessions(t *testing.T) {
+	for _, platform := range []string{"fake", "r-owner:fake"} {
+		t.Run(platform, func(t *testing.T) {
+			s := testServer(t)
+			now := time.Now().UnixMilli()
+			s.registry.Register(&pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: platform, SessionList: []db.Session{
+				{ID: "plugin", Platform: platform, Origin: string(sessioncatalog.Plugin), Status: db.StatusWaiting, TimeUpdated: now},
+				{ID: "user", Platform: platform, Status: db.StatusDone, TimeUpdated: now},
+			}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "answer"}})
+
+			t.Run("browser", func(t *testing.T) {
+				w := httptest.NewRecorder()
+				s.handleSessionsNotify(w, httptest.NewRequest(http.MethodGet, "/api/sessions/notify?includeDone=1", nil))
+				var entries []notifyEntry
+				if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil || len(entries) != 1 || entries[0].ID != "user" {
+					t.Fatalf("expected only the user session in browser notifications: %s, %v", w.Body.String(), err)
+				}
+			})
+			t.Run("push", func(t *testing.T) {
+				rows, err := s.pushSnapshot(t.Context())
+				if err != nil || len(rows) != 1 || rows[0].Key != "ocman:"+platform+":user:completed:answer" || rows[0].Notification.Badge {
+					t.Fatalf("expected only the user completion, without a badge: %+v, %v", rows, err)
+				}
+			})
+		})
+	}
 }
 
 func TestPushSnapshotIncludesDoneWithoutChangingBrowserProjection(t *testing.T) {

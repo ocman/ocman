@@ -28,9 +28,9 @@ you choose which sources enable a nonnumeric attention badge:
 
 The first three sources are enabled by default; Routines Inbox is off. These
 preferences are shared by every device connected to this ocman instance and apply
-to foreground badges and background push. Routine sessions are excluded from
-session attention and alerts. Explicit Inbox messages from routines can still
-enable the badge when you enable Routines Inbox.
+to foreground badges and background push. Routine and plugin-owned sessions are
+excluded from session attention and alerts. Explicit Inbox messages from
+routines can still enable the badge when you enable Routines Inbox.
 Remote owners attach their own routine associations to session listings, so
 routine sessions are excluded even when scheduled independently on a remote.
 
