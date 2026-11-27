@@ -1,11 +1,23 @@
 import type { PluginInput, PluginRegistration, PluginSetting } from './plugins';
 
 export function initialPluginValues(plugin: PluginRegistration): NonNullable<PluginInput['values']> {
-  const values = { ...plugin.configuration.values };
+  const values: NonNullable<PluginInput['values']> = Object.assign(Object.create(null), declaredPluginInput(plugin, { values: plugin.configuration.values ?? {} }).values);
   for (const setting of plugin.description.settings ?? []) {
     if (!setting.secret && (!Object.hasOwn(values, setting.key) || values[setting.key] === undefined) && setting.default !== undefined) values[setting.key] = setting.default;
   }
   return values;
+}
+
+// Storage may retain settings removed or reclassified by a newer descriptor.
+// Filter drafts again at submit time in case discovery changed while editing.
+export function declaredPluginInput(plugin: PluginRegistration, input: PluginInput): PluginInput {
+  const settings = plugin.description.settings ?? [];
+  const publicKeys = new Set(settings.filter((setting) => !setting.secret).map((setting) => setting.key));
+  const secretKeys = new Set(settings.filter((setting) => setting.secret).map((setting) => setting.key));
+  return {
+    values: Object.fromEntries(Object.entries(input.values ?? {}).filter(([key]) => publicKeys.has(key))),
+    secrets: Object.fromEntries(Object.entries(input.secrets ?? {}).filter(([key]) => secretKeys.has(key))),
+  };
 }
 
 // Mirrors protocol.Setting.Accepts and the management required/presence checks.

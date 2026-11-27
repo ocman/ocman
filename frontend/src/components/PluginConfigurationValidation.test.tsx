@@ -116,6 +116,19 @@ it('accepts blank for an already configured required secret on save and enable',
   expect(posts[1]).toEqual({ path: '/api/plugins/org.example.output/enable', body: { approval: 'approved', grants: [] } });
 });
 
+it('saves only declared fields when an upgrade removed legacy plugin settings', async () => {
+  plugin.description.settings = [{ key: 'listen_address', label: 'Direct listener address', type: 'string', default: '' }];
+  plugin.configuration.values = { listen_address: '', repositories: [], publish_comments: true, publish_checks: true };
+  plugin.configuration.secrets = { github_token: true, webhook_secret: true };
+  await open();
+  click('Configure');
+  fireEvent.change(screen.getByLabelText('Direct listener address'), { target: { value: '127.0.0.1:8099' } });
+  click('Save configuration');
+  await screen.findByText('Configuration saved.');
+  expect(posts[0].body).toEqual({ values: { listen_address: '127.0.0.1:8099' }, secrets: {} });
+  expect(plugin.configuration.secrets).toEqual({ github_token: true, webhook_secret: true });
+});
+
 it('retains missing-secret guidance through a changed configuration remount without copying a draft password', async () => {
   await open();
   click('Enable');

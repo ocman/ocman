@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { PluginRegistration, PluginSetting } from './plugins';
-import { initialPluginValues, pluginConfigurationErrors } from './pluginConfigurationValidation';
+import { declaredPluginInput, initialPluginValues, pluginConfigurationErrors } from './pluginConfigurationValidation';
 
 const registration = (setting: Partial<PluginSetting>, value?: unknown, configured = false): PluginRegistration => ({
   ownerId: 'local', approval: 'reviewed', checksum: 'fixture', enabled: false, removed: false, grants: [],
@@ -51,6 +51,31 @@ it('applies defaults without replacing explicit false, zero, empty strings or li
   expect(initialPluginValues(registration({ default: 'default' }))).toEqual({ value: 'default' });
   for (const value of [false, 0, '', []]) expect(initialPluginValues(registration({ default: 'default' }, value))).toEqual({ value });
   expect(initialPluginValues(registration({ secret: true }))).toEqual({});
+  const empty = registration({ default: 'default' });
+  empty.configuration.values = null;
+  expect(initialPluginValues(empty)).toEqual({ value: 'default' });
+});
+
+it('omits removed public settings and values that became secrets after a plugin upgrade', () => {
+  const plugin = registration({ key: 'listen_address', default: '' });
+  plugin.description.settings!.push({ key: 'token', label: 'Token', type: 'string', secret: true });
+  plugin.configuration.values = { listen_address: '127.0.0.1:8099', publish_comments: true, repositories: [], token: 'old-public-value' };
+  expect(initialPluginValues(plugin)).toEqual({ listen_address: '127.0.0.1:8099' });
+  expect(plugin.configuration.values).toHaveProperty('token', 'old-public-value');
+  plugin.description.settings = [];
+  expect(initialPluginValues(plugin)).toEqual({});
+});
+
+it('filters current public and secret drafts at submission without resetting removed secrets', () => {
+  const plugin = registration({ key: 'listen_address' });
+  plugin.description.settings!.push({ key: 'token', label: 'Token', type: 'string', secret: true });
+  expect(declaredPluginInput(plugin, {
+    values: { listen_address: '', token: 'not-public', obsolete: false },
+    secrets: { token: 'replacement', listen_address: 'not-secret', obsolete: '' },
+  })).toEqual({ values: { listen_address: '' }, secrets: { token: 'replacement' } });
+  expect(declaredPluginInput(plugin, {})).toEqual({ values: {}, secrets: {} });
+  plugin.description.settings = undefined;
+  expect(declaredPluginInput(plugin, { values: { obsolete: 0 }, secrets: { obsolete: '' } })).toEqual({ values: {}, secrets: {} });
 });
 
 it('does not treat inherited object properties as configured settings or secrets', () => {

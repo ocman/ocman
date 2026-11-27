@@ -41,6 +41,11 @@ history transition restores the original URL and keeps the draft mounted. Secret
 write-only. Search, filters, pagination, host, selected plugin and detail tab are
 stored in the URL, without configuration values or secrets.
 
+After a plugin upgrade, configuration forms submit only settings declared by the
+current plugin version. Removed settings and values that became write-only
+secrets are not resubmitted as public values. Stored secrets are not reset by
+this filtering; a secret changes only through its declared write-only control.
+
 ## Plugin workspaces
 
 Plugins may set an optional navigation icon, either a built-in Bootstrap icon

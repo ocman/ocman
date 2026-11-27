@@ -323,7 +323,8 @@ it('uses project-scoped selectors for Slack configuration', async () => {
   fireEvent.click(screen.getByRole('option', { name: 'openai/gpt-5' }));
   click('Save configuration');
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', 'org.ocman.slack', 'configuration', {
-    values: { mode: 'good', project: '/repo', agent: 'build', model: 'openai/gpt-5' }, secrets: {},
+    // The shared fixture's old mode is not declared by this descriptor.
+    values: { project: '/repo', agent: 'build', model: 'openai/gpt-5' }, secrets: {},
   }));
 });
 

@@ -4,7 +4,7 @@ import { useProjects } from '../lib/queries';
 import { useMachinePlatforms } from '../lib/useCapabilities';
 import type { PluginInput, PluginRegistration } from '../lib/plugins';
 import { plugins } from '../lib/plugins';
-import { initialPluginValues, pluginConfigurationErrors } from '../lib/pluginConfigurationValidation';
+import { declaredPluginInput, initialPluginValues, pluginConfigurationErrors } from '../lib/pluginConfigurationValidation';
 import { SearchSelect } from './SearchSelect';
 import { SettingRow } from './SettingRow';
 import { Button, ButtonGroup, SelectField, TextareaField, TextField } from './Control';
@@ -70,7 +70,7 @@ export function PluginConfiguration({ plugin, save, error = '', saving = false, 
     event.preventDefault();
     if (busy) return;
     if (invalid) { setSubmitAttempt((attempt) => attempt + 1); return; }
-    const input = { values, secrets };
+    const input = declaredPluginInput(plugin, { values, secrets });
     setSecrets({});
     void save(input);
   }}>
