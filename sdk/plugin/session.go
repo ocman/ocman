@@ -50,6 +50,7 @@ var AssociatedSessionCapability = protocol.AssociatedSessionCapability
 
 var ToolSessionCapability = protocol.ToolSessionCapability
 var StreamingSessionCapability = protocol.StreamingSessionCapability
+var ChildSessionCapability = protocol.ChildSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps
@@ -83,6 +84,9 @@ func NewSessionRun(operationID string, params SessionRunParams) (Call, error) {
 	}
 	if params.Tools != nil {
 		call.Version = ToolSessionCapability.Version
+	}
+	if params.ParentRun != "" {
+		call.Version = ChildSessionCapability.Version
 	}
 	if err := (Envelope{Type: TypeCall, Call: &call}).Validate(); err != nil {
 		return Call{}, err

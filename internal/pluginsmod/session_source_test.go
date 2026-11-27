@@ -20,11 +20,13 @@ type sourceTestSessions struct {
 	rules     []platforms.PermissionRule
 	created   int
 	directory string
+	parentID  string
 }
 
 func (s *sourceTestSessions) CreateConfigured(_ context.Context, _ string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
 	s.rules = rules
 	s.directory = req.Directory
+	s.parentID = req.Creation.ParentID
 	s.created++
 	return &platforms.CreateSessionResponse{ID: "source-session"}, nil
 }

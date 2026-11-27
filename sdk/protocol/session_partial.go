@@ -38,7 +38,7 @@ func validSessionReplyText(text string) bool {
 func sessionVersion(d Description) Version {
 	for _, c := range d.Capabilities {
 		if c.Name == SessionCapability.Name && c.Version.Major == 1 {
-			return Version{Major: 1, Minor: min(c.Version.Minor, StreamingSessionCapability.Version.Minor)}
+			return Version{Major: 1, Minor: min(c.Version.Minor, ChildSessionCapability.Version.Minor)}
 		}
 	}
 	return SessionCapability.Version

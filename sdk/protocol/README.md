@@ -607,6 +607,18 @@ Permission prompts remain in ocman and are never exposed to the provider.
 
 ## session.v1
 
+### Plugin-owned child runs, minor 9
+
+Declare `ChildSessionCapability` and set `parentRun` on a private workspace
+`run` to the operation ID of a successful root `run` from this plugin. The
+host ties the child to the parent's entry in the session tree only if the
+plugin, platform connection and resolved workspace directory match. An
+existing session ID is not a parent reference. Child runs do not inherit tools
+or permissions; the child must satisfy the same grants and workspace mode
+checks as a standalone run. Unsupported hosts reject this field rather than
+creating a detached run. The plugin decides when to delegate and still receives
+each child's result and usage through the usual completion callback.
+
 ### Assistant previews, minor 8
 
 Declare `StreamingSessionCapability` and pass `"stream": true` on a `run` or

@@ -134,7 +134,7 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		supported := []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.StreamingSessionCapability, plugins.PaneCapability, plugins.PageTableCapability, plugins.UICapability, plugins.ToolCapability, plugins.AssetCapability}
+		supported := []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.ChildSessionCapability, plugins.PaneCapability, plugins.PageTableCapability, plugins.UICapability, plugins.ToolCapability, plugins.AssetCapability}
 		if registration.Description.NavBadgeAllowed(registration.Grants) {
 			supported = append(supported, plugins.NavBadgeCapability)
 		}

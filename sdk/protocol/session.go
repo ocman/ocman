@@ -31,6 +31,9 @@ var ReadOnlySessionCapability = Capability{Name: "session", Version: Version{Maj
 // AssociatedSessionCapability adds display-only project attribution for private workspaces.
 var AssociatedSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 6}}
 
+// ChildSessionCapability attaches a restricted run to a prior plugin run.
+var ChildSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 9}}
+
 const SessionProjectGrant = "session.project"
 const SessionPluginGrant = "session.plugin"
 const SessionSourceGrant = "session.source"
@@ -64,6 +67,8 @@ const (
 // approved project is always the base, and a subpath can only reach inside it.
 type SessionRunParams struct {
 	ProjectID string `json:"projectId,omitempty"`
+	// ParentRun references a successful session.run operation from this plugin.
+	ParentRun string `json:"parentRun,omitempty"`
 	// AssociatedProjectID groups a private workspace directory under an owner-local
 	// project without changing the execution directory or permissions. Requires 1.6.
 	AssociatedProjectID string        `json:"associatedProjectId,omitempty"`
@@ -101,6 +106,9 @@ type SessionCompleted struct {
 // allows newlines and tabs, unlike validText, because prompts are multi-line;
 // other control characters are rejected, as in conversation.v1.
 func (p SessionRunParams) Validate() error {
+	if p.ParentRun != "" && (!validText(p.ParentRun) || len(p.ParentRun) > 128 || p.WorkspaceID == "") {
+		return ErrInvalidMessage
+	}
 	if p.Tools != nil && (p.Tools.Validate() != nil || p.WorkspaceID == "" || p.NoTools || p.ReadOnly || p.Subpath != "" || p.Agent != "" || p.PermissionProfile != "") {
 		return ErrInvalidMessage
 	}

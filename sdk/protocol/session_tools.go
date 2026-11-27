@@ -127,7 +127,7 @@ func (b *SessionBroker) stopTools(ctx context.Context, pluginID string, call Cal
 	var params SessionStopParams
 	d := json.NewDecoder(bytes.NewReader(call.Params))
 	d.DisallowUnknownFields()
-	if call.Capability != "session" || call.Version.Major != 1 || call.Version.Minor < 7 || call.Version.Minor > StreamingSessionCapability.Version.Minor || !validText(call.OperationID) || len(call.Params) > SessionToolMaxBytes || d.Decode(&params) != nil || d.Decode(new(any)) != io.EOF || params.Validate() != nil {
+	if call.Capability != "session" || call.Version.Major != 1 || call.Version.Minor < 7 || call.Version.Minor > ChildSessionCapability.Version.Minor || !validText(call.OperationID) || len(call.Params) > SessionToolMaxBytes || d.Decode(&params) != nil || d.Decode(new(any)) != io.EOF || params.Validate() != nil {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, _ Config) error { return SessionToolsAllowed(d, grants) }); err != nil {

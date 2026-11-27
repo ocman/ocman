@@ -549,6 +549,8 @@ address on your behalf — the value only shapes the links it writes.
 
 ## Authoring session.v1
 
+With [session 1.9](../../sdk/protocol/README.md#plugin-owned-child-runs-minor-9), a plugin can attach a delegated private workspace run beneath its own coordinator. The host checks the parent run receipt and requires the same platform connection and workspace directory. A child uses its own explicitly restricted tools and never inherits the parent's permissions.
+
 ### Streaming integration for `ocman-plugin-im`
 
 Advertise `StreamingSessionCapability` (session 1.8) and use the Go SDK's

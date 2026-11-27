@@ -182,6 +182,10 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	if err != nil {
 		return "", err
 	}
+	parentID, err := m.pluginRunParent(ctx, pluginID, platformID, dir, params.ParentRun)
+	if err != nil {
+		return "", err
+	}
 	ensured, err := host.EnsureRuntime(ctx, base, filepath.Clean(config.Project))
 	if err != nil {
 		return "", err
@@ -205,7 +209,7 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 		Directory: dir, Title: "plugin:" + pluginID + ":" + operationID, Port: ensured.Port(),
 		Creation: &platforms.CreationIdentity{
 			RequestKey: "plugin:" + pluginID + ":" + operationID,
-			Origin:     string(sessioncatalog.Plugin), OriginID: pluginID, Archived: params.Archived,
+			Origin:     string(sessioncatalog.Plugin), OriginID: pluginID, Archived: params.Archived, ParentID: parentID,
 		},
 	}, rules)
 	if err != nil {

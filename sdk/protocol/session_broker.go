@@ -86,13 +86,16 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if call.Method == SessionStopMethod {
 		return b.stopTools(ctx, pluginID, call)
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > StreamingSessionCapability.Version.Minor || call.Method != SessionRunMethod {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ChildSessionCapability.Version.Minor || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	params, err := DecodeSessionRunParams(call.Params)
+	if params.ParentRun != "" && call.Version.Minor < ChildSessionCapability.Version.Minor {
+		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
+	}
 	if params.Stream && call.Version.Minor < StreamingSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
@@ -106,6 +109,9 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted Config) error {
 		if err := SessionAllowed(d, grants); err != nil {
 			return err
+		}
+		if params.ParentRun != "" && sessionVersion(d).Minor < ChildSessionCapability.Version.Minor {
+			return &WireError{Category: ErrorPermissionDenied}
 		}
 		if slices.Contains(d.RequestedGrants, SessionPluginGrant) && !slices.Contains(d.RequestedGrants, SessionProjectGrant) && params.WorkspaceID == "" {
 			return &WireError{Category: ErrorPermissionDenied}
