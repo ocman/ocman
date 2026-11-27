@@ -67,14 +67,17 @@ func TestSessionDeclarationContract(t *testing.T) {
 
 func TestSessionRunParamsValidation(t *testing.T) {
 	for name, p := range map[string]SessionRunParams{
-		"empty prompt":   {Prompt: ""},
-		"blank prompt":   {Prompt: "   \n"},
-		"control prompt": {Prompt: "a\x00b"},
-		"oversized":      {Prompt: strings.Repeat("x", SessionMaxPromptBytes+1)},
-		"invalid utf8":   {Prompt: string([]byte{0xff, 0xfe})},
-		"agent spaces":   {Prompt: "go", Agent: " build"},
-		"model control":  {Prompt: "go", Model: "provider/model\n"},
-		"long profile":   {Prompt: "go", PermissionProfile: strings.Repeat("p", 129)},
+		"empty prompt":             {Prompt: ""},
+		"blank prompt":             {Prompt: "   \n"},
+		"control prompt":           {Prompt: "a\x00b"},
+		"oversized":                {Prompt: strings.Repeat("x", SessionMaxPromptBytes+1)},
+		"invalid utf8":             {Prompt: string([]byte{0xff, 0xfe})},
+		"agent spaces":             {Prompt: "go", Agent: " build"},
+		"model control":            {Prompt: "go", Model: "provider/model\n"},
+		"long profile":             {Prompt: "go", PermissionProfile: strings.Repeat("p", 129)},
+		"parent control":           {Prompt: "go", WorkspaceID: "workspace-a", NoTools: true, ParentRun: "parent\nrun"},
+		"parent too long":          {Prompt: "go", WorkspaceID: "workspace-a", NoTools: true, ParentRun: strings.Repeat("p", 129)},
+		"parent without workspace": {Prompt: "go", ParentRun: "parent-run"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if p.Validate() == nil {

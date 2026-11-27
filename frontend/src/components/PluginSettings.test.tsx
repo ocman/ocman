@@ -353,6 +353,7 @@ it('reads the Slack catalog on the installation platform', async () => {
 it('opens Slack settings when the project catalog has no agents or models', async () => {
   plugin.description.id = 'org.ocman.slack';
   plugin.description.settings = [
+    { key: 'project', type: 'string', label: 'Project directory', required: true },
     { key: 'agent', type: 'string', label: 'Agent' },
     { key: 'model', type: 'string', label: 'Model' },
   ];
@@ -362,7 +363,7 @@ it('opens Slack settings when the project catalog has no agents or models', asyn
   vi.mocked(plugins.projectCatalog).mockReturnValue(catalog);
   await open();
   click('Configure');
-  expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', '', expect.any(AbortSignal));
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', '', expect.any(AbortSignal)));
   await act(async () => { await catalog; });
   expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent('saved-agent');
   expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Default model');
