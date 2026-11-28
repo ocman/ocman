@@ -141,6 +141,12 @@ const deliveryExpirySQL = `UPDATE push_delivery SET done=1 WHERE done=0 AND crea
 const dueDeliveriesSQL = `SELECT d.endpoint,event,payload,subscription,attempts FROM push_delivery d
 	 JOIN push_subscription s ON s.endpoint=d.endpoint WHERE done=0 AND next_at<=? ORDER BY d.created_at LIMIT 32`
 
+func (s *store) discard(ctx context.Context, d delivery) error {
+	// Keep the receipt so a later snapshot cannot enqueue the same alert again.
+	_, err := s.db.ExecContext(ctx, `UPDATE push_delivery SET done=1 WHERE endpoint=? AND event=?`, d.endpoint, d.event)
+	return err
+}
+
 func (s *store) finish(ctx context.Context, d delivery, success bool, delay time.Duration) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE push_delivery SET done=?,attempts=attempts+1,next_at=? WHERE endpoint=? AND event=?`,
 		success || d.attempts >= 5, time.Now().Add(delay).UnixMilli(), d.endpoint, d.event)

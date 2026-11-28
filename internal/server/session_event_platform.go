@@ -91,7 +91,7 @@ func (s *Server) legacySessionPlatform(platform string, row sessioncatalog.Sessi
 // The caller must keep the original data for history ingestion and other hooks.
 func (s *Server) publicSessionEvent(event string, data []byte) ([]byte, bool) {
 	switch event {
-	case "ocman.session.changed", "ocman.session.status", "ocman.session.activity", "ocman.session.idle", "ocman.permission.resolved", "ocman.question.resolved":
+	case "ocman.session.changed", "ocman.session.status", "ocman.session.activity", "ocman.session.idle", "ocman.session.seen", "ocman.permission.resolved", "ocman.question.resolved":
 	default:
 		return data, true
 	}

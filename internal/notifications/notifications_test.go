@@ -247,6 +247,7 @@ func TestFailuresAreBoundedAndCancelRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := Candidate{Key: "error", Notification: Notification{Title: "alert"}}
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) { return []Candidate{c}, nil }
 	if err := m.store.enqueue(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +396,9 @@ func TestInvalidPersistedSubscriptionsAndCancellation(t *testing.T) {
 	if err := m.store.save(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.enqueue(ctx, Candidate{Key: "alert"}); err != nil {
+	alert, canceled := Candidate{Key: "alert"}, Candidate{Key: "cancel"}
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) { return []Candidate{alert, canceled}, nil }
+	if err := m.store.enqueue(ctx, alert); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.store.db.Exec(`UPDATE push_subscription SET subscription='{'`); err != nil {
@@ -423,7 +426,7 @@ func TestInvalidPersistedSubscriptionsAndCancellation(t *testing.T) {
 	if err := m.store.save(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.enqueue(ctx, Candidate{Key: "cancel"}); err != nil {
+	if err := m.store.enqueue(ctx, canceled); err != nil {
 		t.Fatal(err)
 	}
 	cancelCtx, cancel := context.WithCancel(ctx)

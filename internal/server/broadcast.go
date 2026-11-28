@@ -49,7 +49,7 @@ type broadcastEvent struct {
 // without ever blocking a producer. The key is derived by coalesceKey
 // (event + session id).
 //
-// ocman.session.idle / ocman.session.changed are identity-keyed: the
+// Session events are identity-keyed: the
 // consumer re-reads state on receipt (useGlobalEvents refetches; the
 // provisional session/patch payloads are optimizations ahead of that
 // refetch), so keeping only the newest per (event, session) is safe —
@@ -58,6 +58,7 @@ type broadcastEvent struct {
 var coalescingEvents = map[string]bool{
 	"ocman.queue.updated":    true,
 	"ocman.session.idle":     true,
+	"ocman.session.seen":     true,
 	"ocman.session.changed":  true,
 	"ocman.session.activity": true,
 	"ocman.projects.changed": true,

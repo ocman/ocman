@@ -79,6 +79,8 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.broadcastSidebarChanged(platform, req.SessionID)
+	payload, _ := json.Marshal(map[string]string{"sessionID": req.SessionID, "platform": platform})
+	s.broadcastGlobalEvent("ocman.session.seen", payload)
 
 	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }

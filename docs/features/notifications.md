@@ -108,10 +108,16 @@ are kept quiet rather than asking for input on a permission still being judged.
 
 VAPID signing keys, subscriptions, pending deliveries and deduplication receipts
 live in this installation's `state.db`. Pending sends survive a restart;
-transient failures retry up to six attempts with backoff. Undelivered alerts
-expire after an hour, push-service retention is five minutes, and expired
+transient failures retry up to six attempts with backoff. Before sending or
+retrying, ocman checks that the session update still needs attention. Undelivered
+alerts expire after an hour, push-service retention is five minutes, and expired
 subscriptions are removed automatically. OS notification permissions, Focus
 modes and browser restrictions can delay or prevent delivery.
+
+When you read a session on another device, a connected ocman app checks its
+alerts and clears ones that no longer need attention, even if its window is
+hidden. On iPadOS, Web Push can't silently wake a suspended or closed web app
+to remove an alert. In that case, ocman checks again the next time you open it.
 
 Subscribed devices receive session alerts through push instead of also showing
 the page's polling notifications. Browsers without Web Push retain notifications

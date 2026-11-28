@@ -71,6 +71,20 @@ async function awayFor(ms: number) {
 }
 
 describe('useGlobalEvents connection', () => {
+  it('rechecks notifications if another device marks a session seen while the app is hidden', () => {
+    hidden = true;
+    const { unmount } = renderHook(() => useGlobalEvents());
+    try {
+      recheckNotifyData.mockClear();
+      const source = FakeEventSource.instances.at(-1)!;
+      source.listeners.get('ocman.session.seen')?.({ data: '{"sessionID":"s","platform":"owner:agent"}' });
+      expect(recheckNotifyData).toHaveBeenCalledOnce();
+    } finally {
+      hidden = false;
+      unmount();
+    }
+  });
+
   it('clears settings on SSE invalidation and reconnect', () => {
     const { unmount } = renderHook(() => useGlobalEvents());
     clearSettingsCache.mockClear();

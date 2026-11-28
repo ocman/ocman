@@ -76,11 +76,15 @@ func TestSnapshotsContinueDuringStalledDelivery(t *testing.T) {
 	if err := m.store.save(t.Context(), sub); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.enqueue(t.Context(), Candidate{Key: "pending"}); err != nil {
+	pending := Candidate{Key: "pending"}
+	if err := m.store.enqueue(t.Context(), pending); err != nil {
 		t.Fatal(err)
 	}
 	var snapshots atomic.Int32
-	m.d.Snapshot = func(context.Context) ([]Candidate, error) { snapshots.Add(1); return nil, nil }
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) {
+		snapshots.Add(1)
+		return []Candidate{pending}, nil
+	}
 	entered := make(chan struct{})
 	m.client.Transport = transport(func(r *http.Request) (*http.Response, error) {
 		close(entered)
@@ -97,7 +101,7 @@ func TestSnapshotsContinueDuringStalledDelivery(t *testing.T) {
 		t.Fatal("delivery did not start")
 	}
 	time.Sleep(50 * time.Millisecond)
-	if snapshots.Load() < 2 {
+	if snapshots.Load() < 3 {
 		t.Error("stalled delivery prevented snapshot observation")
 	}
 	cancel()
@@ -125,6 +129,49 @@ func TestFailedInitialSnapshotRecoveryDoesNotReplayHistory(t *testing.T) {
 	rows, err := m.store.due(ctx)
 	if err != nil || len(rows) != 0 {
 		t.Fatal("historical alert enqueued on recovery")
+	}
+}
+
+func TestSeenSessionDoesNotGetRetriedPush(t *testing.T) {
+	m := fixture(t)
+	ctx := t.Context()
+	sub := subscription(t)
+	sub.Endpoint = "https://web.push.apple.com/device"
+	if err := m.store.save(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	var snapshot []Candidate
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) { return snapshot, nil }
+	if err := m.tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snapshot = []Candidate{{Key: "ocman:owner:session:completed:message", Notification: Notification{Kind: "completed"}}}
+	if err := m.tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	m.client.Transport = transport(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: http.NoBody}, nil
+	})
+	if err := m.deliver(ctx); err != nil || calls != 1 {
+		t.Fatalf("initial unread push: calls=%d err=%v", calls, err)
+	}
+	if _, err := m.store.db.Exec(`UPDATE push_delivery SET next_at=0`); err != nil {
+		t.Fatal(err)
+	}
+	readErr := errors.New("owner offline")
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) { return nil, readErr }
+	if err := m.deliver(ctx); !errors.Is(err, readErr) || calls != 1 {
+		t.Fatalf("retry without fresh state: calls=%d err=%v", calls, err)
+	}
+	snapshot = nil // The session was marked seen on another device before the retry.
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) { return snapshot, nil }
+	if err := m.deliver(ctx); err != nil || calls != 1 {
+		t.Fatalf("seen session push retried: calls=%d err=%v", calls, err)
+	}
+	if due, err := m.store.due(ctx); err != nil || len(due) != 0 {
+		t.Fatalf("seen session still waiting to retry: due=%d err=%v", len(due), err)
 	}
 }
 
@@ -179,8 +226,10 @@ func TestExpiredEndpointSkipsRemainingMaterializedDeliveries(t *testing.T) {
 	if err := m.store.save(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"first", "second"} {
-		if err := m.store.enqueue(ctx, Candidate{Key: key}); err != nil {
+	candidates := []Candidate{{Key: "first"}, {Key: "second"}}
+	m.d.Snapshot = func(context.Context) ([]Candidate, error) { return candidates, nil }
+	for _, candidate := range candidates {
+		if err := m.store.enqueue(ctx, candidate); err != nil {
 			t.Fatal(err)
 		}
 	}

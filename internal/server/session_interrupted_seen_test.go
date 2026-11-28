@@ -99,3 +99,29 @@ func TestInterruptedSessionBecomesUnreadWithoutNewActivity(t *testing.T) {
 	row.Status = db.StatusInterrupted
 	check(false)
 }
+
+func TestMarkSessionSeenNotifiesConnectedClients(t *testing.T) {
+	srv, _ := newPeekTestServer(t, "r-box:opencode", db.StatusWaiting)
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+	w := httptest.NewRecorder()
+	srv.handleSeenSession(w, httptest.NewRequest(http.MethodPost, "/api/session/seen", strings.NewReader(`{"platform":"r-box:opencode","sessionId":"s1","timeUpdated":100}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("mark seen: %d %s", w.Code, w.Body.String())
+	}
+	for {
+		select {
+		case event := <-sub.ch:
+			if event.event != "ocman.session.seen" {
+				continue
+			}
+			var payload map[string]string
+			if err := json.Unmarshal(event.data, &payload); err != nil || payload["platform"] != "r-box:opencode" || payload["sessionID"] != "s1" {
+				t.Fatalf("unexpected seen event: %s", event.data)
+			}
+			return
+		default:
+			t.Fatal("no seen event sent to connected clients")
+		}
+	}
+}

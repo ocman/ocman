@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -17,11 +18,27 @@ func (m *Module) deliver(ctx context.Context) error {
 	if err != nil || len(due) == 0 {
 		return err
 	}
+	// Recheck before sending, including retries restored after restart. A
+	// failed snapshot is not evidence that an alert was seen or resolved.
+	candidates, err := m.d.Snapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("checking queued Web Push alerts: %w", err)
+	}
+	relevant := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		relevant[candidate.Key] = true
+	}
 	private, public, err := m.store.keys(ctx)
 	if err != nil {
 		return err
 	}
 	for _, d := range due {
+		if !relevant[d.event] {
+			if err := m.store.discard(ctx, d); err != nil {
+				return err
+			}
+			continue
+		}
 		active, err := m.store.active(ctx, d.endpoint)
 		if err != nil {
 			return err

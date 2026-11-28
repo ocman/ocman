@@ -31,6 +31,8 @@ import { remoteLog } from './remoteLog';
  *     recheck so the bell / favicon / toast surface it promptly.
  *   - `ocman.session.idle`: a session finished a turn. Force a recheck
  *     so the completed-but-unseen indicators update promptly.
+ *   - `ocman.session.seen`: recheck and clear stale alerts in connected apps,
+ *     including hidden windows where notification polling is paused.
  *
  * A single shared EventSource is reference-counted across all hook
  * consumers so we never open more than one connection per tab.
@@ -296,6 +298,9 @@ function open(): void {
     handleSurface((e as MessageEvent).data);
   });
   next.addEventListener('ocman.session.idle', (e) => {
+    handleSurface((e as MessageEvent).data);
+  });
+  next.addEventListener('ocman.session.seen', (e) => {
     handleSurface((e as MessageEvent).data);
   });
   next.addEventListener('ocman.session.changed', (e) => {
