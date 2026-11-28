@@ -98,6 +98,21 @@ func (f *Forwarder) Forward(ctx context.Context, report *usagewire.Report, ip st
 		if err != nil {
 			return err
 		}
+		if report.Health != nil {
+			for _, row := range report.Health {
+				s, t := row.Starts, row.Turns
+				f.emit(ctx, "ocman.usage.health.daily", day, now,
+					attribute.String("ocman.health.batch", report.InstallationID), attribute.String("ocman.activity.date", report.Date),
+					attribute.String("ocman.version", report.Version), attribute.String("ocman.platform", row.Platform),
+					attribute.Int64("ocman.starts.ready", s.Ready), attribute.Int64("ocman.starts.failed", s.Failed),
+					attribute.Int64("ocman.starts.timeout", s.Timeout), attribute.Int64("ocman.starts.canceled", s.Canceled),
+					attribute.Int64("ocman.turns.started", t.Started), attribute.Int64("ocman.turns.completed", t.Completed),
+					attribute.Int64("ocman.turns.failed", t.Failed), attribute.Int64("ocman.turns.interrupted", t.Interrupted),
+					attribute.Int64("ocman.turns.canceled", t.Canceled), attribute.Int64("ocman.turns.no_response", t.NoResponse),
+					attribute.Int64Slice("ocman.turns.first_response_buckets", t.FirstResponse))
+			}
+			return f.exporter.Export(ctx, records)
+		}
 		identity := []attribute.KeyValue{
 			attribute.String("ocman.installation.id", report.InstallationID),
 			attribute.String("ocman.activity.date", report.Date),

@@ -104,7 +104,7 @@ func (s *Service) DirectoryCatalog(ctx context.Context, platformID string, req p
 	return catalog, routeID, err
 }
 
-func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule, routine routineCreation) (*platforms.CreateSessionResponse, error) {
+func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule, routine routineCreation) (_ *platforms.CreateSessionResponse, resultErr error) {
 	if req.Directory == "" {
 		return nil, validation("directory is required")
 	}
@@ -165,6 +165,14 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		}
 	}
 	createPhase := srvtiming.Begin(ctx, "create_session")
+	replayed := false
+	if observe := s.hooks.CreateOutcome; observe != nil {
+		defer func() {
+			if !replayed {
+				observe(adapter, resultErr)
+			}
+		}()
+	}
 	resp, err := adapter.CreateSession(ctx, req)
 	createPhase.EndWithDesc("adapter.CreateSession")
 	if err != nil {
@@ -174,6 +182,7 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		return nil, fmt.Errorf("platform %s returned no session", adapter.ID())
 	}
 	if _, canonical := adapter.(platforms.SessionCreationCommitter); canonical && resp.Replayed {
+		replayed = true
 		return resp, nil
 	}
 	if rules != nil && !resp.ConfigurationApplied {

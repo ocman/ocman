@@ -30,6 +30,8 @@ type Hooks struct {
 	BeginActivity  func(context.Context, platforms.Platform, string) (context.Context, func(), error)
 	BeginDirectory func(context.Context, platforms.Platform, string) (context.Context, func(), error)
 	BeginTurn      func(context.Context, platforms.ID) (func(), error)
+	CreateOutcome  func(platforms.Platform, error)
+	BeginAbort     func(platforms.Platform, string) func(bool)
 	// PermissionReplied fires after the owning adapter is resolved and
 	// before a permission reply is forwarded to it. The server wires
 	// this to cancelAutoApprove: the user has decided, so the AI
@@ -209,7 +211,15 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 	if req.TaskID != "" && !p.Capabilities().BackgroundTaskStop {
 		return platforms.ErrUnsupported
 	}
-	return p.Abort(ctx, req)
+	var observe func(bool)
+	if req.TaskID == "" && s.hooks.BeginAbort != nil {
+		observe = s.hooks.BeginAbort(p, req.SessionID)
+	}
+	err = p.Abort(ctx, req)
+	if observe != nil {
+		observe(err == nil)
+	}
+	return err
 }
 
 // Dispose permanently removes a session so it can no longer be discovered or used.

@@ -47,8 +47,9 @@ type Options struct {
 	// Linger keeps a source attached after its last subscriber leaves.
 	Linger time.Duration
 	// Backoff is the first source reconnect delay; it doubles to maxBackoff.
-	Backoff time.Duration
-	Now     func() time.Time
+	Backoff         time.Duration
+	Now             func() time.Time
+	BeginHealthTurn func(Key) func(outcome string, firstResponse time.Duration, sawResponse bool)
 }
 
 type Hub struct {

@@ -55,6 +55,8 @@ func (m *Module) settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !*body.Enabled {
+			m.health = nil
+			m.healthEpoch++
 			if m.cancel != nil {
 				m.cancel()
 			}

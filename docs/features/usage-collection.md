@@ -1,12 +1,43 @@
 ---
-title: Usage collection
+title: Privacy and usage reports
+description: What Ocman sends in product usage reports, where the data goes, and how to turn reporting off.
 weight: 34
 ---
 
-Vanilla installations use `https://relay-ocman.stenic.io` and enable usage
-collection by default. Override the relay with `-relay-url` or `OCMAN_RELAY_URL`,
-or opt out below to stop usage reports. It measures
-active installations, not distinct people. The data is pseudonymous, not anonymous.
+Ocman sends product usage reports by default. We use them to count daily
+active installations and see which models are used most, so we can decide
+where to focus improvements. The reports count installations, not people.
+
+To stop usage and health reports, open **Settings → Privacy & usage** and turn
+off **Send usage reports**. You can also [opt out before first use](#opt-out).
+
+## What Ocman sends
+
+| Report | What it contains |
+| --- | --- |
+| Daily activity | A randomly generated installation ID, the UTC date, and the Ocman version. It indicates that someone used the foreground UI that day, not how long they used it. |
+| Daily model usage | The same installation ID, UTC date, and version, plus the total session count and session, input-token, and output-token counts by model. Only known public model names are sent. All others are grouped as `other`. The report has no separate platform field. |
+| Daily health | UTC date, Ocman version, and counts by platform for session creation, turn outcomes, and time to first visible assistant text. Health uses a random batch ID for retries, not the persistent installation ID. |
+
+Usage reports do not include prompts, responses, source code, file paths,
+repository names, account IDs, or session IDs. Raw UI activity intervals stay
+on your machine. The installation ID stays the same across days, so reports
+from one installation can be linked over time. The reports are pseudonymous,
+not anonymous.
+
+## Where reports go
+
+By default, reports go to `https://relay-ocman.stenic.io`. The settings page
+shows the destination. To use a different relay, set `-relay-url` or
+`OCMAN_RELAY_URL`.
+
+The relay sees the source IP when it receives a request. The IP is not in the
+usage report. The relay forwards it separately as a security event for
+activity and model report requests, and can record it for rejected health
+requests. It does not forward IP addresses on successful health reports.
+The relay forwards reports to a configured logging
+backend rather than storing them on disk itself. The backend operator controls
+access and retention. Proxy or CDN logs are configured separately.
 
 ## Opt out
 
@@ -63,6 +94,29 @@ With no relay configured, nothing is sent. Public destinations require HTTPS;
 plain HTTP is accepted only for loopback development. Redirects are rejected.
 
 ## Relay forwarding
+
+### Daily health summaries
+
+`POST /v1/usage/health` sends only the previous UTC day's counters. Counts
+are grouped by platform: OpenCode, Claude Code, or Codex. The report includes:
+
+- Session creation outcomes: ready, failed, timed out, or canceled.
+- Observed live turns: started, completed, failed, interrupted, or canceled.
+- Settled turns with no observed assistant text, and counts in first-response
+  buckets: under 1s, 1–2s, 2–5s, 5–10s, 10–30s, 30–60s, and at least 60s.
+
+Timing starts when the live conversation stream sees the turn start, not when
+you click Send. Turns that start before the stream connects are not measured.
+A started turn and its outcome can land on different dates. Remote owners
+report their own creation outcomes; the hub does not report health from
+remote conversation streams. Reports contain no raw errors or stack traces.
+
+Ocman keeps unsent health counts in memory. A restart can lose unreported
+counts, and turning off reports discards them. The relay exports one
+`ocman.usage.health.daily` record per platform. Deduplicate on UTC date,
+platform, and `ocman.health.batch` before summing. Don't share breakdowns
+based on just a few reports. Deploy collector support and the relay before
+clients; older relays do not accept health reports.
 
 ### Daily model summaries
 
@@ -162,6 +216,7 @@ flowchart LR
     Worker -->|ID, UTC date, version| Relay[Relay usage routes]
     Summary[Owner-local analytics summaries] -->|Closed UTC day; usage reporting enabled| Worker
     Worker -->|Daily session counts and tokens by model| Relay
+    Lifecycle[Session creation and live turns] -->|Daily counters and timing buckets| Worker
     Relay -->|Separate usage and IP events| Forward[usageforward OTLP/HTTP]
     Forward --> Backend[Operator's logs backend]
 ```

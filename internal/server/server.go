@@ -252,6 +252,8 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		BeginActivity:  s.beginWorktreeSessionActivity,
 		BeginDirectory: s.beginWorktreePlatformDirectoryActivity,
 		BeginTurn:      s.beginConfigTurn,
+		CreateOutcome:  s.recordHealthStart,
+		BeginAbort:     s.beginHealthCancel,
 		// Cancel any in-flight auto-approve judge before a permission
 		// reply is forwarded: the user has decided, so we must not race
 		// their answer with the AI's verdict, and we must not pay for a

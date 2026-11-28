@@ -162,3 +162,19 @@ func TestUsageCollectionEndpoint(t *testing.T) {
 		t.Fatalf("no relay analytics endpoint: %d", w.Code)
 	}
 }
+
+func TestDailyHealthAcceptsOnlyAggregateFields(t *testing.T) {
+	sink := &usageSink{}
+	h := newHarness(t, func(cfg *Config) { cfg.Usage = sink })
+	const body = `{"installationId":"3f70f326-5593-4b78-a31f-c67a23920334","date":"2026-08-12","version":"0.275.0","health":[{"platform":"codex","starts":{"ready":1,"failed":1}}]}`
+	if w := h.do(http.MethodPost, "/v1/usage/health", []byte(body), ""); w.Code != http.StatusNoContent {
+		t.Fatalf("health status = %d: %s", w.Code, w.Body.String())
+	}
+	bad := []byte(`{"installationId":"3f70f326-5593-4b78-a31f-c67a23920334","date":"2026-08-12","version":"0.275.0","health":[{"platform":"codex","starts":{"ready":1,"error":"raw error"}}]}`)
+	if w := h.do(http.MethodPost, "/v1/usage/health", bad, ""); w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid health status = %d: %s", w.Code, w.Body.String())
+	}
+	if len(sink.reports) != 1 || len(sink.statuses) != 2 || sink.statuses[1] != http.StatusBadRequest {
+		t.Fatal("expected one aggregate and one payload-free security event")
+	}
+}

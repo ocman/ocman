@@ -40,9 +40,10 @@ func (s *Server) convStreamModule() *convstream.Module {
 				}
 				return out, nil
 			},
-			Keepalive:  func() time.Duration { return sseKeepaliveInterval },
-			CaptureDir: os.Getenv(convstream.CaptureEnv),
-			Trace:      traceSessionStream,
+			Keepalive:       func() time.Duration { return sseKeepaliveInterval },
+			CaptureDir:      os.Getenv(convstream.CaptureEnv),
+			Trace:           traceSessionStream,
+			BeginHealthTurn: s.beginHealthTurn,
 		})
 	})
 }

@@ -146,6 +146,7 @@ func (k *sessionSink) Connected(seed Seed) {
 		return
 	}
 	k.connected = true
+	k.s.health = nil // A reconnect cannot measure an already-running turn.
 	k.s.connectLocked(seed)
 }
 

@@ -38,6 +38,7 @@ type session struct {
 	queueGen     uint64
 	queueReading bool
 	settlement   settlementState
+	health       *healthTurn
 
 	descMu sync.Mutex
 	desc   map[string]descendant
@@ -139,6 +140,9 @@ func (s *session) publishLocked(ev convevents.Event, replayed bool) {
 	frame := s.encode(ev, seq, replayed, true)
 	if frame == nil {
 		return
+	}
+	if !replayed && s.hub.opts.BeginHealthTurn != nil {
+		s.observeHealth(ev)
 	}
 	supersedes, key := compaction(ev)
 	s.hub.account(s, s.log.append(seq, frame, supersedes, key))

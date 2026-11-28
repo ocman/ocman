@@ -102,6 +102,23 @@ func TestDailyUsageEvents(t *testing.T) {
 	}
 }
 
+func TestDailyHealthDoesNotExportSourceIPOrInstallationID(t *testing.T) {
+	e := &memoryExporter{}
+	f := newForwarder(e)
+	t.Cleanup(func() { _ = f.Shutdown(t.Context()) })
+	r := &usagewire.Report{Date: "2026-11-24", InstallationID: "batch", Health: []usagewire.Health{{Platform: "codex", Starts: usagewire.StartCounts{Ready: 2}}}}
+	if err := f.Forward(t.Context(), r, "192.0.2.1", 204); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.records) != 1 || e.records[0].EventName() != "ocman.usage.health.daily" {
+		t.Fatal("expected only the health record")
+	}
+	a := attributes(&e.records[0])
+	if a["client.address"] != nil || a["ocman.installation.id"] != nil || a["ocman.health.batch"] != "batch" || a["ocman.starts.ready"] != int64(2) {
+		t.Fatal(a)
+	}
+}
+
 func TestOTLPHTTPDeliveryAndFailure(t *testing.T) {
 	clearEnv(t)
 	var received collectorlog.ExportLogsServiceRequest

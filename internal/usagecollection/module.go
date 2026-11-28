@@ -28,6 +28,9 @@ type Module struct {
 	now         func() time.Time
 	nextAttempt time.Time
 	nextDaily   time.Time
+	nextHealth  time.Time
+	health      map[string]*healthDay
+	healthEpoch uint64
 	cancel      context.CancelFunc
 }
 
@@ -75,6 +78,7 @@ func (m *Module) Run(ctx context.Context) {
 		defer ticker.Stop()
 		m.sendPending(ctx)
 		m.sendDaily(ctx)
+		m.sendHealth(ctx)
 		for {
 			select {
 			case <-ctx.Done():
@@ -84,6 +88,7 @@ func (m *Module) Run(ctx context.Context) {
 			case <-ticker.C:
 				m.sendPending(ctx)
 				m.sendDaily(ctx)
+				m.sendHealth(ctx)
 			}
 		}
 	})

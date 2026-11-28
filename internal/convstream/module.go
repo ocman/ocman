@@ -23,7 +23,8 @@ type Deps struct {
 	// CaptureDir, when set, records raw source frames (CaptureEnv).
 	CaptureDir string
 	// Trace wraps the stream handler inside the login guard; may be nil.
-	Trace func(http.HandlerFunc) http.HandlerFunc
+	Trace           func(http.HandlerFunc) http.HandlerFunc
+	BeginHealthTurn func(Key) func(outcome string, firstResponse time.Duration, sawResponse bool)
 }
 
 type Module struct {
@@ -36,7 +37,7 @@ type Module struct {
 
 func NewModule(d Deps) *Module {
 	m := &Module{d: d, connectGrace: defaultConnectGrace}
-	m.hub = NewHub(Options{Workers: &m.workers, Descendant: d.Descendant, Queue: d.Queue})
+	m.hub = NewHub(Options{Workers: &m.workers, Descendant: d.Descendant, Queue: d.Queue, BeginHealthTurn: d.BeginHealthTurn})
 	return m
 }
 

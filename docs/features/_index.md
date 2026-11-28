@@ -133,6 +133,9 @@ Parallel tools count once within each request. Tool time includes permission
 and question waits; incomplete timings appear as unknown. Totals sum request
 durations, so they are not elapsed session time when sessions run in parallel.
 
+See [Privacy and usage reports](usage-collection.md) for what Ocman sends to
+the relay and how to turn off product usage reporting.
+
 **Analytics → Session trends** shows message activity and parallel sessions over
 time. The concurrency chart follows the project and date filters. Each point is
 the peak simultaneous session count
